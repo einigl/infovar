@@ -1,0 +1,27 @@
+variables:
+  - MedInc
+  - HouseAge
+  - AveRooms
+  - AveBedrms
+  - Population
+  - AveOccup
+  - Latitude
+  - Longitude
+  - Noise
+
+targets:
+  - MedHouseVal
+
+n_variables:
+  - 2
+
+ranges:
+  - MedHouseVal: [all, low, mid, high]
+
+statistics:
+  - mi
+  - corr
+
+bootstrapping:
+  mi: 20
+  corr: 20
