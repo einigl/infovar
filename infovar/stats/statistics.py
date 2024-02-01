@@ -39,11 +39,9 @@ class MI(Statistic):
         variables: np.ndarray,
         targets: np.ndarray
     ):
-        # TODO: gérer ici la dégénérescence et l'ajout de bruit
-        # _Yn, _Xn = degeneracy_handling(
-        #     _Y, _X, duplicates_y=True, duplicates_x=False
-        # )
-        return mi(variables, targets)
+        _variables = variables + np.random.normal(0, 1e-3, variables.shape)
+        _targets = targets + np.random.normal(0, 1e-3, targets.shape)
+        return mi(_variables, _targets)
 
 class Condh(Statistic):
     """
@@ -55,7 +53,9 @@ class Condh(Statistic):
         variables: np.ndarray,
         targets: np.ndarray
     ):
-        return centropy(targets, variables)
+        _variables = variables + np.random.normal(0, 1e-3, variables.shape)
+        _targets = targets + np.random.normal(0, 1e-3, targets.shape)
+        return centropy(_variables, _targets)
 
 class Corr(Statistic):
     """

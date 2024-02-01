@@ -42,13 +42,13 @@ def canonical_corr(X: np.ndarray, Y: np.ndarray, max: bool=True) -> Union[float,
     """
 
     # Contraction matrix (which singular values are the canonical correlations)   
-    M = contraction_matrix(X, Y)
+    M, _, __ = contraction_matrix(X, Y)
 
     # Singular values decomposition
     _, S, __ = np.linalg.svd(M)
     
     if max:
-        return S[0] # S is already sorder in decreasing order
+        return S[0] # S is already sorted in decreasing order
     
     return S
 
