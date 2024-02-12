@@ -4,6 +4,7 @@ import numpy as np
 
 from .entropy_estimators import mi, centropy
 from .canonical_estimators import canonical_corr
+from .info_theory import corr_to_info
 
 __all__ = [
     "Statistic",
@@ -68,3 +69,16 @@ class Corr(Statistic):
         targets: np.ndarray
     ):
         return canonical_corr(variables, targets, max=True).item()
+
+class LinearInfo(Statistic):
+    """
+    TODO
+    """
+
+    def __call__(
+        self,
+        variables: np.ndarray,
+        targets: np.ndarray
+    ):
+        rhos = canonical_corr(variables, targets, max=False)
+        return np.sum(corr_to_info(rhos))

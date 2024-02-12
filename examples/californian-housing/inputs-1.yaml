@@ -18,10 +18,18 @@ n_variables:
 ranges:
   - MedHouseVal: [all, low, mid, high]
 
+min_samples: 200
+
 statistics:
   - mi
-  - corr
+  - linearinfo
 
-bootstrapping:
-  mi: 20
-  corr: 20
+uncertainty:
+  mi:
+    name: subsampling
+    args:
+      n: 5
+  linearinfo:
+    name: bootstrapping
+    args:
+      n: 10

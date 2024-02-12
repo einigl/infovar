@@ -9,78 +9,49 @@ from time import time
 import numpy as np
 from tqdm import tqdm
 
-from ..stats.statistics import Statistic, MI, Condh, Corr
+from ..stats.statistics import Statistic
+from ..stats.resampling import Resampling
+
+from .handler import Handler
 
 __all__ = [
     "DiscreteHandler"
 ]
 
-class DiscreteHandler:
+class DiscreteHandler(Handler):
 
-    variables: np.ndarray
-    targets: np.ndarray
-    variable_names: List[str]
-    target_names: List[str]
     ref_path: str
     save_path: str
+
+    variables: Optional[np.ndarray]
+    targets: Optional[np.ndarray]
+    variable_names: Optional[List[str]]
+    target_names: Optional[List[str]]
+
     additional_stats: Dict[str, Callable]
-    fn_bounds: List[Optional[Callable]]
+    additional_resamplings: Dict[str, Resampling]={},
 
-    def __init__(
+    fn_bounds: Optional[List[Optional[Callable]]]
+    inv_fn_bounds: Optional[List[Optional[Callable]]]
+
+
+    # General
+
+    def get_filename(
         self,
-        variables: np.ndarray,
-        targets: np.ndarray,
-        variable_names: Union[List[str], str],
-        target_names: Union[List[str], str],
-        ref_path: str,
-        save_path: str,
-        additional_stats: Dict[str, Callable]={},
-        fn_bounds: Optional[List[Optional[Callable]]]=None
-    ):
-        assert isinstance(variables, np.ndarray)
-        assert isinstance(targets, np.ndarray)
+        targets: Union[str, Sequence[str]]
+    ) -> str:
+        if isinstance(targets, str):
+            targets = [targets]
+        _targets = "_".join(sorted(targets))
+        return os.path.join(self.save_path, _targets + '.json')
 
-        if isinstance(variable_names, str):
-            variable_names = [variable_names]
-        if isinstance(target_names, str):
-            target_names = [target_names]
-
-        assert variables.ndim in (1, 2)
-        assert targets.ndim in (1, 2)
-        if variables.ndim == 1:
-            variables = np.expand_dims(variables, 1)
-        if targets.ndim == 1:
-            targets = np.expand_dims(targets, 1)
-
-        assert len(variable_names) == variables.shape[1]
-        assert len(target_names) == targets.shape[1]
-        assert variables.shape[0] == targets.shape[0]
-
-        self.variables = variables
-        self.targets = targets
-        self.variable_names = variable_names
-        self.target_names = target_names
-
-        self.ref_path = ref_path
-        self.save_path = save_path
-
-        assert all([isinstance(el, Statistic) for el in additional_stats])
-        self.stats = {
-            'mi': MI(),
-            'condh': Condh(),
-            'corr': Corr(),
-        }
-        self.stats.update(additional_stats)
-
-        if fn_bounds is None:
-            fn_bounds = [None] * len(target_names)
-        self.fn_bounds = fn_bounds
 
     # Writing access
 
     def create(
         self,
-        targets: Sequence[Union[str, Sequence[str]]]
+        targets: Union[str, Sequence[str]]
     ):
         """
         Create the statistics directory if not exists as well as the JSON files for targets in `targets`.
@@ -88,11 +59,10 @@ class DiscreteHandler:
         if not os.path.exists(self.save_path):
             os.makedirs(self.save_path)
         
-        for tar in targets:
-            path = self._targets_to_filename(tar)
-            if not os.path.isfile(path):
-                with open(path, 'w', encoding="utf-8") as f:
-                    json.dump([], f, ensure_ascii=False, indent=4)
+        path = self.get_filename(targets)
+        if not os.path.isfile(path):
+            with open(path, 'w', encoding="utf-8") as f:
+                json.dump([], f, ensure_ascii=False, indent=4)
 
     def remove(
         self,
@@ -107,7 +77,7 @@ class DiscreteHandler:
                 shutil.rmtree(self.save_path)
 
         for tar in targets:
-            path = self._targets_to_filename(tar)
+            path = self.get_filename(tar)
             if os.path.isfile(path):
                 os.remove(path)
 
@@ -116,7 +86,7 @@ class DiscreteHandler:
         targs: Union[str, List[str]],
         stats: Union[str, List[str]]
     ) -> None:
-        path = self._targets_to_filename(targs)
+        path = self.get_filename(targs)
         with open(path, 'r') as f:
             d = json.load(f)  # results is a list of dicts
 
@@ -132,24 +102,6 @@ class DiscreteHandler:
 
         with open(path, 'w', encoding="utf-8") as f:
             json.dump(d, f, ensure_ascii=False, indent=4)
-
-    def update(
-        self,
-        inputs_dict: Dict[str, Any],
-    ) -> None:
-        self.store(
-            inputs_dict,
-            overwrite=False
-        )
-
-    def overwrite(
-        self,
-        inputs_dict: Dict[str, Any],
-    ) -> None:
-        self.store(
-            inputs_dict,
-            overwrite=True
-        )
 
     def store(
         self,
@@ -176,17 +128,17 @@ class DiscreteHandler:
             ref_dict,
         )
 
-        # Create directory of not exists
-        self.create(inputs_dict["targets"])
-
         # Targets loop
         for targs in inputs_dict['targets']:
+
+            # Create directory of not exists
+            self.create(targs)
 
             if isinstance(targs, str):
                 targs = [targs]
 
             # Load existing data
-            path = self._targets_to_filename(targs)
+            path = self.get_filename(targs)
             with open(path, 'r') as f:
                 results = json.load(f)  # results is a list of dicts
 
@@ -243,7 +195,7 @@ class DiscreteHandler:
                     entry = results[index_vars]["stats"][index_ranges]["stats"]
                     for stat in inputs_dict["statistics"]:
 
-                        operator = self.stats[stat] # Callable(ndarray, ndarray) -> float
+                        operator = self.stats[stat]
 
                         self._compute_stat(
                             _X, _Y,
@@ -256,11 +208,11 @@ class DiscreteHandler:
                     })
 
                 # Save results (update for each variables iteration)
-                with open(self._targets_to_filename(targs), 'w', encoding="utf-8") as f:
+                with open(self.get_filename(targs), 'w', encoding="utf-8") as f:
                     json.dump(results, f, ensure_ascii=False, indent=4)
 
-    @staticmethod
     def _compute_stat(
+        self,
         X: np.ndarray, Y: np.ndarray,
         operator: Statistic, stat: str,
         inputs_dict: Dict[str, Any], entry: Dict[str, Any]
@@ -280,16 +232,13 @@ class DiscreteHandler:
         Note: if the available number of samples is lower than `inputs_dict["min_samples"]`,
         then all three entries are set to None.
         """
-        import warnings
-        warnings.filterwarnings('error')
-
         # Samples
         samples = Y.shape[0]
         if samples <= inputs_dict["min_samples"]:
             return {
                 f'{stat}': None,
                 f'{stat}-time': None,
-                f'{stat}-boot': None
+                f'{stat}-std': None
             }
 
         # Simple computation
@@ -306,7 +255,7 @@ class DiscreteHandler:
                 entry.update({
                     f'{stat}': None,
                     f'{stat}-time': None,
-                    f'{stat}-boot': None
+                    f'{stat}-std': None
                 })
                 return entry
         else:
@@ -315,30 +264,22 @@ class DiscreteHandler:
                 f'{stat}-time': entry[f'{stat}-time'],
             })
 
-        # Bootstrapping
-        if inputs_dict["bootstrapping"][stat] in (None, 0):
-            if f'{stat}-boot' not in entry:
-                entry['{stat}-boot'] = None
-            return
-        if entry.get(f'{stat}-boot') is None:
-            entry[f'{stat}-boot'] = []
-
-        n_boot = inputs_dict["bootstrapping"][stat] - len(entry[f'{stat}-boot'])
-        if n_boot <= 0:
-            return
-
-        boots = entry[f'{stat}-boot']
+        # Uncertainty
         try:
-            for _ in range(n_boot):
-                idx = np.random.choice(samples, samples, replace=True)
-                boots.append(operator(X[idx], Y[idx]))
-            entry.update({
-                f'{stat}-boot': boots
-            })
+            d = inputs_dict["uncertainty"][stat]
+            name, args = d["name"], d["args"]
         except:
-            entry.update({
-                f'{stat}-boot': None
-            })
+            if f'{stat}-std' not in entry:
+                entry[f'{stat}-std'] = None
+            return
+
+        try:
+            std = self.resamplings[name].compute_sigma(X, Y, operator, **args)
+        except:
+            std = None
+        entry.update({
+            f'{stat}-std': std
+        })
 
         return entry
 
@@ -358,7 +299,7 @@ class DiscreteHandler:
         # TODO pour les targets, il faut trier par ordre alphabétique
 
         # Load data
-        path = self._targets_to_filename(targs)
+        path = self.get_filename(targs)
         if not os.path.exists(path):
             raise FileNotFoundError(f"File {path} not exists yet.")
         with open(path, 'r') as f:
@@ -427,15 +368,6 @@ class DiscreteHandler:
         for r in repeats:
             res += list(itt.combinations(ls, r))
         return res
-    
-    def _targets_to_filename(
-        self,
-        targets: Union[str, Sequence[str]]
-    ) -> str:
-        if isinstance(targets, str):
-            targets = [targets]
-        _targets = "_".join(sorted(targets))
-        return os.path.join(self.save_path, _targets + '.json')
 
     @staticmethod
     def _list_ranges(
@@ -457,72 +389,95 @@ class DiscreteHandler:
         inputs_dict: Dict[str, Any],
         ref_dict: Dict[str, Any]
     ) -> None:
+        # Reference file
+
+        key = "variables"
+        assert isinstance(ref_dict[key], List)
+        assert all([isinstance(el, (str, List)) for el in ref_dict[key]])
+
+        key = "targets"
+        assert isinstance(ref_dict[key], List)
+        assert all([isinstance(el, (str, List)) for el in ref_dict[key]])
+
+        key = "ranges"
         # TODO
-        # raise ValueError("Inputs must match the reference file")
-        pass
 
-    def _filter_data(
-        self,
-        vars: Union[str, List[str]],
-        targs: Union[str, List[str]],
-        ranges: Dict[str, Optional[Tuple[Optional[float], Optional[float]]]],
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Preprocess data to be within a given range of data.
-        """
-        if isinstance(vars, str):
-            vars = [vars]
-        if isinstance(targs, str):
-            targs = [targs]
+        # Inputs file
 
-        vars_idx = [self.variable_names.index(v) for v in vars]
-        _vars = np.column_stack([
-            self.variables[:, i] for i in vars_idx
-        ])
+        mandatory_keys = [
+            "variables",
+            "targets",
+            "statistics",
+        ]
+        for key in mandatory_keys:
+            assert key in inputs_dict
 
-        targs_idx = [self.target_names.index(v) for v in targs]
-        _targs = np.column_stack([
-            self.targets[:, i] for i in targs_idx
-        ])
+        optional_keys = [
+            "n_variables",
+            "ranges",
+            "min_samples",
+            "uncertainty"
+        ]
+
+        for key in inputs_dict:
+            if key not in mandatory_keys:
+                assert key in optional_keys
+
+        key = "variables"
+        assert isinstance(inputs_dict[key], List)
+        assert all([isinstance(el, str) for el in inputs_dict[key]])
+        #
+        assert all([k in ref_dict[key] for k in inputs_dict[key]])
+        #
+
+        key = "targets"
+        assert isinstance(inputs_dict[key], List)
+        assert all([isinstance(el, (str, List)) for el in inputs_dict[key]])
+        #
+        assert all([k in ref_dict[key] for k in inputs_dict[key]])
+        #
+
+        key = "n_variables"
+        if key not in inputs_dict:
+            inputs_dict[key] = [1]
+        if isinstance(inputs_dict[key], int):
+            inputs_dict[key] = [inputs_dict[key]]
+        assert isinstance(inputs_dict[key], List)
+        assert all([isinstance(el, int) for el in inputs_dict[key]])
+
+        key = "ranges"
+        if key not in inputs_dict:
+            inputs_dict[key] = None
+        assert isinstance(inputs_dict[key], List)
+        assert all([isinstance(el, Dict) for el in inputs_dict[key]])
+        #
+        # TODO
+        #
+
+        key = "min_samples"
+        if key not in inputs_dict:
+            inputs_dict[key] = 0
+        assert isinstance(inputs_dict[key], int)
+
+        key = "statistics"
+        if isinstance(inputs_dict[key], str):
+            inputs_dict[key] = [inputs_dict[key]]
+        assert isinstance(inputs_dict[key], List)
+        assert all([isinstance(el, str) for el in inputs_dict[key]])
+
+        key = "uncertainty"
+        if key not in inputs_dict:
+            inputs_dict[key] = {}
+        assert isinstance(inputs_dict[key], Dict)
+        assert all([isinstance(k, str) and isinstance(d, Dict)\
+                    for k, d in inputs_dict[key].items()])
+        assert all(["name" in d for d in inputs_dict[key].values()])
         
-        filt = np.ones(_targs.shape[0], dtype="bool")
 
-        # Remove pixels out of the targets ranges (including NaNs)
-        for rgs in ranges:
-            fn_b = self.fn_bounds[self.target_names.index(rgs)]
-            if fn_b is None:
-                fn_b = lambda t: t
-            if ranges[rgs] is None:
-                pass
-            else:
-                a, b = ranges[rgs]
-                i = self.target_names.index(rgs)
-                if a is not None:
-                    filt &= fn_b(a) <= self.targets[:, i]
-                if b is not None:
-                    filt &= self.targets[:, i] <= fn_b(b)
+        return inputs_dict
 
-        _vars = _vars[filt]
-        _targs = _targs[filt]
-       
-        return _vars, _targs
 
-    # Others
-
-    def overview(self):
-        print("Variables:")
-        for i, v in enumerate(self.variable_names):
-            print(f"\t{v}: [{self.variables[:, i].min():.2f}, {self.variables[:, i].max():.2f}]")
-        
-        print()
-
-        print("Targets:")
-        for i, t in enumerate(self.target_names):
-            print(f"\t{t}: [{self.targets[:, i].min():.2f}, {self.targets[:, i].max():.2f}]")
-
-        print()
-
-        print("Number of samples:", f"{self.targets.shape[0]:,}")
+    # Display
 
     def __str__(self):
-        return f"DiscreteHandler (path: {self.path})"
+        return f"DiscreteHandler"

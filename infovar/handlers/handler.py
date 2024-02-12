@@ -1,42 +1,75 @@
-import os
-import shutil
-import json
-import yaml
-import itertools as itt
+from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Tuple, Union, Optional, Sequence, Callable
 
 import numpy as np
-from tqdm import tqdm
 
-from ..stats.statistics import Statistic, MI, Condh, Corr
+from ..stats.statistics import Statistic, MI, Condh, Corr, LinearInfo
+from ..stats.resampling import Resampling, Bootstrapping, Subsampling
 
 
-__all__ = [
-    "ContinuousHandler"
-]
+class Handler(ABC):
 
-class ContinuousHandler:
-
-    variables: np.ndarray
-    targets: np.ndarray
-    variable_names: List[str]
-    target_names: List[str]
     ref_path: str
     save_path: str
-    additional_stats: Dict[str, Callable]
-    fn_bounds: List[Optional[Callable]]
+
+    variables: Optional[np.ndarray]
+    targets: Optional[np.ndarray]
+    variable_names: Optional[List[str]]
+    target_names: Optional[List[str]]
+
+    stats: Dict[str, Callable]
+    resamplings: Dict[str, Resampling]={},
+
+    fn_bounds: Optional[List[Optional[Callable]]]
+    inv_fn_bounds: Optional[List[Optional[Callable]]]
 
     def __init__(
+        self
+    ):
+        self.stats = {
+            'mi': MI(),
+            'condh': Condh(),
+            'corr': Corr(),
+            'linearinfo': LinearInfo()
+        }
+
+        self.resamplings = {
+            'bootstrapping': Bootstrapping(),
+            'subsampling': Subsampling(),
+        }
+
+        self.ref_path = None
+        self.save_path = None
+
+        self.variables = None
+        self.targets = None
+        self.variable_names = None
+        self.target_names = None
+
+        self.additional_stats = None
+        self.additional_resamplings = None
+
+        self.fn_bounds = None
+        self.inv_fn_bounds = None
+
+
+    # Setter
+        
+    def set_paths(
+        self,
+        ref_path: str,
+        save_path: str
+    ) -> None:
+        self.ref_path = ref_path
+        self.save_path = save_path
+        
+    def set_data(
         self,
         variables: np.ndarray,
         targets: np.ndarray,
         variable_names: Union[List[str], str],
         target_names: Union[List[str], str],
-        ref_path: str,
-        save_path: str,
-        additional_stats: Dict[str, Callable]={},
-        fn_bounds: Optional[List[Optional[Callable]]]=None
-    ):
+    ) -> None:
         assert isinstance(variables, np.ndarray)
         assert isinstance(targets, np.ndarray)
 
@@ -61,67 +94,76 @@ class ContinuousHandler:
         self.variable_names = variable_names
         self.target_names = target_names
 
-        self.ref_path = ref_path
-        self.save_path = save_path
-
+    def set_additional_stats(
+        self,
+        additional_stats: Dict[str, Callable]={},
+    ) -> None:
         assert all([isinstance(el, Statistic) for el in additional_stats])
-        self.stats = {
-            'mi': MI(),
-            'condh': Condh(),
-            'corr': Corr(),
-        }
         self.stats.update(additional_stats)
 
+    def set_additional_resamplings(
+        self,
+        additional_resamplings: Dict[str, Callable]={},
+    ) -> None:
+        assert all([isinstance(el, Resampling) for el in additional_resamplings])
+        self.stats.update(additional_resamplings)
+
+    def set_fn(
+        self,
+        fn_bounds: Optional[List[Optional[Callable]]]=None,
+        inv_fn_bounds: Optional[List[Optional[Callable]]]=None
+    ) -> None:
+        if fn_bounds is None and inv_fn_bounds is None:
+            self.fn_bounds = None
+            self.inv_fn_bounds = None
+            return
+
+        assert self.target_names is not None
+
         if fn_bounds is None:
-            fn_bounds = [None] * len(target_names)
+            fn_bounds = [None] * len(self.target_names)
+        if fn_bounds is None:
+            fn_bounds = [None] * len(self.target_names)
+
         self.fn_bounds = fn_bounds
+        self.inv_fn_bounds = inv_fn_bounds
 
-# Writing access
 
+    # General
+        
+    @abstractmethod
+    def get_filename(
+        self,
+        targets: Union[str, Sequence[str]],
+        variables: Union[str, Sequence[str]]
+    ) -> str:
+        pass
+
+
+    # Writing access
+
+    @abstractmethod
     def create(
         self,
-        targets: Sequence[Union[str, Sequence[str]]]
+        targets: Union[str, Sequence[str]],
+        variables: Union[str, Sequence[str]]
     ):
-        """
-        Create the statistics directory if not exists as well as the JSON files for targets in `targets`.
-        """
-        # TODO
-        if not os.path.exists(self.save_path):
-            os.makedirs(self.save_path)
-        
-        for tar in targets:
-            path = self._targets_to_filename(tar)
-            if not os.path.isfile(path):
-                with open(path, 'w', encoding="utf-8") as f:
-                    json.dump([], f, ensure_ascii=False, indent=4)
+        pass
 
+    @abstractmethod
     def remove(
         self,
         targets: Optional[Sequence[Union[str, Sequence[str]]]],
         variables: Optional[Sequence[Union[str, Sequence[str]]]]
     ) -> None:
-        """
-        If `targets` and `variables` are both None, remove the whole directory if exists.
-        If `targets` and `variables` are both not None, only remove the corresponding pickle file.
-        Else raise an error.
-        """
-        if targets is None and variables is None:
-            if os.path.exists(self.save_path):
-                shutil.rmtree(self.save_path)
+        pass
 
-        if (targets is None) ^ (variables is None):
-            raise ValueError("targets and variables must be simultaneously None or not None")
-
-        path = self._get_filename(targets, variables)
-        if os.path.isfile(path):
-            os.remove(path)
-
+    @abstractmethod
     def delete_stats(
         self,
         targs: Union[str, List[str]],
         stats: Union[str, List[str]]
     ) -> None:
-        # TODO
         pass
 
     def update(
@@ -142,71 +184,12 @@ class ContinuousHandler:
             overwrite=True
         )
 
+    @abstractmethod
     def store(
         self,
         inputs_dict: Dict[str, Any],
         overwrite: bool=False
     ):
-        """
-        Inputs_dict:
-        - TODO
-        """
-
-        # Get filename from targs and vars
-        # Load .pickle file
-        # Access the right regime
-        # Access the right stat
-
-        # Overwrite : écrase le fichier complet avec tous ses régimes
-        # Not overwrite : écrase seulement les régimes indiqués
-
-        # TODO
-
-
-    # Reading access
-
-    def read(
-        self,
-        targs: Union[str, Sequence[str]],
-        vars: Union[str, Sequence[str]],
-        regs: Union[str, Sequence[str]]
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        if isinstance(targs, str):
-            targs = [targs]
-        if isinstance(targs, tuple):
-            targs = list(targs)
-
-        if isinstance(vars, str):
-            vars = [vars]
-        if isinstance(vars, tuple):
-            vars = list(vars)
-
-        if isinstance(regs, str):
-            regs = [regs]
-        if isinstance(regs, tuple):
-            regs = list(regs)
-
-        # TODO
-    
-    def _get_filename(
-        self,
-        targets: Union[str, Sequence[str]],
-        variables: Union[str, Sequence[str]]
-    ) -> str:
-        if isinstance(targets, str):
-            targets = [targets]
-        if isinstance(variables, str):
-            targets = [variables]
-        _targets = "_".join(sorted(targets)) + "__" + "_".join(sorted(variables))
-        return os.path.join(self.save_path, _targets + '.npz')
-
-    def _check_inputs(
-        self,
-        inputs_dict: Dict[str, Any],
-        ref_dict: Dict[str, Any]
-    ) -> None:
-        # TODO
-        # raise ValueError("Inputs must match the reference file")
         pass
 
     def _filter_data(
@@ -235,11 +218,19 @@ class ContinuousHandler:
         
         filt = np.ones(_targs.shape[0], dtype="bool")
 
+        # Remove non-finite pixels in variables
+        filt &= np.isfinite(_vars).all(axis=1)
+
         # Remove pixels out of the targets ranges (including NaNs)
         for rgs in ranges:
-            fn_b = self.fn_bounds[self.target_names.index(rgs)]
+            if self.fn_bounds is None:
+                fn_b = None
+            else:
+                fn_b = self.fn_bounds[self.target_names.index(rgs)]
+
             if fn_b is None:
                 fn_b = lambda t: t
+
             if ranges[rgs] is None:
                 pass
             else:
@@ -255,7 +246,31 @@ class ContinuousHandler:
        
         return _vars, _targs
 
-    # Others
+
+    # Reading access
+
+    @abstractmethod
+    def read(
+        self,
+        targs: Union[str, Sequence[str]],
+        vars: Union[str, Sequence[str]],
+        wins_targs: Union[str, Sequence[str]]
+    ) -> Dict[str, Any]:
+        pass
+    
+
+    @abstractmethod
+    def _check_inputs(
+        self,
+        inputs_dict: Dict[str, Any],
+        ref_dict: Dict[str, Any]
+    ) -> None:
+        # TODO
+        # raise ValueError("Inputs must match the reference file")
+        pass
+
+
+    # Display
 
     def overview(self):
         print("Variables:")
@@ -272,6 +287,6 @@ class ContinuousHandler:
 
         print("Number of samples:", f"{self.targets.shape[0]:,}")
 
+    @abstractmethod
     def __str__(self):
-        return f"ContinuousHandler (path: {self.path})"
-
+        pass

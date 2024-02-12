@@ -14,8 +14,6 @@ def prob_higher(
     Returns the probability
     Ref: https://stats.stackexchange.com/questions/44139/what-is-px-1x-2-x-1x-3-x-1x-n
     """
-    n_samples = 1 # Not sure about the role of this value
-
     if not isinstance(mus, np.ndarray):
         mus = np.array(mus)
     if not isinstance(sigmas, np.ndarray):
@@ -25,15 +23,15 @@ def prob_higher(
     n_vars = mus.size
 
     def integrand(t: np.ndarray, i: int) -> np.ndarray:
-        res = stats.norm.logpdf(t, loc=mus[i], scale=sigmas[i]/np.sqrt(n_samples))
+        res = stats.norm.logpdf(t, loc=mus[i], scale=sigmas[i])
         for j in range(n_vars):
             if j != i:
-                res += stats.norm.logcdf(t, loc=mus[j], scale=sigmas[j]/np.sqrt(n_samples))
+                res += stats.norm.logcdf(t, loc=mus[j], scale=sigmas[j])
         return np.exp(res)
     # We restrict to a bounded interval to prevent large integration errors due to the small domain where the integrand is not zero
     n_sigma = 5
 
-    # In approx mode, only the probabilities of line combinations whose +/- 2 sigma intervals overlap are calculated
+    # In approx mode, only the probabilities of line combinations whose +/- n_sigma_approx intervals overlap are calculated
     if approx:
         i_higher = np.argmax(mus)
         n_sigma_approx = 1.5
@@ -43,7 +41,7 @@ def prob_higher(
 
     # If the user wants to compute all probabilities
     if idx is None:
-        probs = np.zeros(n_vars) * np.nan
+        probs = np.zeros(n_vars)# * np.nan
         for i in range(n_vars):
             if  significant[i]:
                 bounds = (mus[i]-n_sigma*sigmas[i], mus[i]+n_sigma*sigmas[i])

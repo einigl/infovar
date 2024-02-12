@@ -1,6 +1,6 @@
-from .continuous import *
-from .discrete import *
+from .handlers import *
+from .stats import *
 
 __all__ = []
-__all__.extend(continuous.__all__)
-__all__.extend(discrete.__all__)
+__all__.extend(handlers.__all__)
+__all__.extend(stats.__all__)
