@@ -1,3 +1,4 @@
+import itertools as itt
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Tuple, Union, Optional, Sequence, Callable
 
@@ -5,6 +6,10 @@ import numpy as np
 
 from ..stats.statistics import Statistic, MI, Condh, Corr, LinearInfo
 from ..stats.resampling import Resampling, Bootstrapping, Subsampling
+
+__all__ = [
+    "Handler"
+]
 
 
 class Handler(ABC):
@@ -57,8 +62,8 @@ class Handler(ABC):
         
     def set_paths(
         self,
-        ref_path: str,
-        save_path: str
+        ref_path: Optional[str]=None,
+        save_path: Optional[str]=None
     ) -> None:
         self.ref_path = ref_path
         self.save_path = save_path
@@ -139,6 +144,16 @@ class Handler(ABC):
     ) -> str:
         pass
 
+    @staticmethod
+    def _comb(
+        ls: Sequence,
+        repeats: Union[int, Sequence[int]]
+    ) -> List[Sequence]:
+        res = []
+        for r in repeats:
+            res += list(itt.combinations(ls, r))
+        return res
+
 
     # Writing access
 
@@ -170,6 +185,11 @@ class Handler(ABC):
         self,
         inputs_dict: Dict[str, Any],
     ) -> None:
+        """
+        We keep the previous results and only recompute the stats that has never been computed before.
+        Note that there is no guarantee that the data used.
+        An error is raised if the number of samples is different from that already stored, if any.
+        """
         self.store(
             inputs_dict,
             overwrite=False
@@ -179,6 +199,11 @@ class Handler(ABC):
         self,
         inputs_dict: Dict[str, Any],
     ) -> None:
+        """
+        We recompute the stats that has already been calculated.
+        Stats already calculated but not included in the inputs_dict are kept.
+        An error is raised if the number of samples is different from that already stored, if any.
+        """
         self.store(
             inputs_dict,
             overwrite=True

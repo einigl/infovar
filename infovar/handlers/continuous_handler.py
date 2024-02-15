@@ -13,10 +13,10 @@ from ..stats.resampling import Resampling
 
 from .handler import Handler
 
-
 __all__ = [
     "ContinuousHandler"
 ]
+
 
 class ContinuousHandler(Handler):
 
@@ -89,7 +89,7 @@ class ContinuousHandler(Handler):
         for stat in stats:
             for item1 in d:
                 item2 = item1["stats"]
-                for key in [f'{stat}-coord', f'{stat}-data']:
+                for key in [f'{stat}-coords', f'{stat}-data']:
                     item2.pop(key, None)
 
     def update(
@@ -120,14 +120,6 @@ class ContinuousHandler(Handler):
         - TODO
         """
 
-        # Get filename from targs and vars
-        # Load .pickle file
-        # Access the right regime
-        # Access the right stat
-
-        # Overwrite : écrase le fichier complet avec tous ses régimes
-        # Not overwrite : écrase seulement les régimes indiqués
-
         # Load the reference 
         with open(self.ref_path, 'r') as f:
             ref_dict = yaml.safe_load(f)  # results is a list of dicts
@@ -147,14 +139,14 @@ class ContinuousHandler(Handler):
 
             # Variables loop
             pbar = tqdm(
-                inputs_dict['variables'],
-                desc=f"{targs}"
+                self._comb(inputs_dict['variables'], inputs_dict['n_variables']),
+                desc=str(targs).replace("'", "")
             )
-            for vars in inputs_dict['variables']:
+            for vars in pbar:
                 if isinstance(vars, str):
                     vars = [vars]
                 vars = sorted(vars)
-                pbar.set_postfix({'vars': f"{vars}"})
+                pbar.set_postfix({'vars': str(vars).replace("'", "")})
 
                 # Create directory of not exists
                 self.create(targs, vars)
@@ -193,18 +185,18 @@ class ContinuousHandler(Handler):
                     entry = results[index_windows]["stats"]
                     for stat in inputs_dict["statistics"]:
 
-                        # We reset the existing results if `overwrite` is True
-                        if overwrite :
-                            entry.pop(f"{stat}-coord", None)
-                            entry.pop(f"{stat}-data", None)
-                            entry.pop("samples", None)
+                        # We pass if the existing statistic exists and that overwrite is False
+                        if not overwrite and stat in entry:
+                            continue
+                        if stat not in entry:
+                            entry.update({stat: {}})
 
                         operator = self.stats[stat] # Callable(ndarray, ndarray) -> float
 
                         self._compute_stat(
                             targs, vars, wins,
                             operator, stat,
-                            inputs_dict, entry
+                            inputs_dict, entry[stat]
                         ) # Modify `entry` in-place
 
                     # Save results (update for each ranges iteration)
@@ -225,7 +217,13 @@ class ContinuousHandler(Handler):
             winsize = (perc/100 if perc>=1 else perc) * np.ptp(arr)
             low, high = np.min(arr), np.max(arr)
 
-            inv_fn = self.inv_fn_bounds[self.target_names.index(targ)]
+            if self.inv_fn_bounds is None:
+                inv_fn = None
+            else:
+                inv_fn = self.inv_fn_bounds[self.target_names.index(targ)]
+
+            if inv_fn is None:
+                inv_fn = lambda t: t
 
             xticks = np.linspace(low+winsize/2, high-winsize/2, pts)
             bounds.append( (inv_fn(xticks-winsize/2), inv_fn(xticks+winsize/2)) )
@@ -233,14 +231,6 @@ class ContinuousHandler(Handler):
 
         data = np.zeros(wins['points'])
         samples = np.zeros(wins['points'])
-
-        try:
-            d = inputs_dict["uncertainty"][stat]
-            name, args = d["name"], d["args"]
-        except:
-            if f'{stat}-std' not in entry:
-                entry[f'{stat}-std'] = None
-            return
         
         if stat in inputs_dict["uncertainty"] and "name" in inputs_dict["uncertainty"][stat]: 
             std = np.zeros(wins['points'])
@@ -249,10 +239,13 @@ class ContinuousHandler(Handler):
         else:
             std = None
 
-        for ii in tqdm(
+        pbar = tqdm(
             itt.product(*[range(n) for n in wins['points']]),
-            total=np.prod(wins['points'])
-        ):
+            total=np.prod(wins['points']),
+            leave=False,
+            desc=f"Stat: {stat}, window: " + str(wins['targets']).replace("'", "")
+        )
+        for ii in pbar:
             ranges = {key: [b[0][i], b[1][i]] for i, b, key in zip(ii, bounds, wins['targets'])}
             _X, _Y = self._filter_data(
                 vars, targs, ranges
@@ -283,10 +276,12 @@ class ContinuousHandler(Handler):
             else:
                 std[ii] = np.nan
 
-        entry[f'{stat}-coords'] = tuple(coords)
-        entry[f'{stat}-data'] = data
-        entry[f'{stat}-std'] = std
-        entry['samples'] = samples
+        entry.update({
+            "coords": tuple(coords),
+            "data": data,
+            "std": std,
+            'samples': samples
+        })
         return entry
 
 
@@ -322,9 +317,35 @@ class ContinuousHandler(Handler):
                 found = True
                 break
         if not found:
-            raise ValueError(f"Windows {vars} doesn't exist in data")
+            raise ValueError(f"Windows {names} doesn't exist in data")
 
         return data
+
+    def get_available_targets(
+        self
+    ):
+        raise NotImplementedError("")
+
+    def get_available_variables(
+        self,
+        targets: Union[str, List[str]],
+    ):
+        raise NotImplementedError("")
+
+    def get_available_windows(
+        self,
+        targets: Union[str, List[str]],
+        variables: Union[str, List[str]]
+    ):
+        raise NotImplementedError("")
+
+    def get_available_stats(
+        self,
+        targets: Union[str, List[str]],
+        variables: Union[str, List[str]],
+        windows: Union[str, List[str]]
+    ):
+        raise NotImplementedError("")
 
     @staticmethod
     def _index_of_data(
@@ -381,6 +402,7 @@ class ContinuousHandler(Handler):
             assert key in inputs_dict
 
         optional_keys = [
+            "n_variables",
             "min_samples",
             "uncertainty"
         ]
@@ -391,17 +413,25 @@ class ContinuousHandler(Handler):
 
         key = "variables"
         assert isinstance(inputs_dict[key], List)
-        assert all([isinstance(el, str) for el in inputs_dict[key]])
+        # assert all([isinstance(el, str) for el in inputs_dict[key]]) TODO
         #
-        assert all([key in inputs_dict[key] in ref_dict[key]])
+        assert all([el in ref_dict[key] for el in inputs_dict[key] if isinstance(el, str)])
         #
 
         key = "targets"
         assert isinstance(inputs_dict[key], List)
-        assert all([isinstance(el, (str, List)) for el in inputs_dict[key]])
+        # assert all([isinstance(el, (str, List)) for el in inputs_dict[key]]) TODO
         #
-        assert all([key in inputs_dict[key] in ref_dict[key]])
+        assert all([el in ref_dict[key] for el in inputs_dict[key] if isinstance(el, str)])
         #
+
+        key = "n_variables"
+        if key not in inputs_dict:
+            inputs_dict[key] = [1]
+        if isinstance(inputs_dict[key], int):
+            inputs_dict[key] = [inputs_dict[key]]
+        assert isinstance(inputs_dict[key], List)
+        assert all([isinstance(el, int) for el in inputs_dict[key]])
 
         key = "windows"
         assert isinstance(inputs_dict[key], List)

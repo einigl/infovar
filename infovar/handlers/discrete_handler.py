@@ -18,6 +18,7 @@ __all__ = [
     "DiscreteHandler"
 ]
 
+
 class DiscreteHandler(Handler):
 
     ref_path: str
@@ -145,12 +146,12 @@ class DiscreteHandler(Handler):
             # Variables loop
             pbar = tqdm(
                 self._comb(inputs_dict['variables'], inputs_dict['n_variables']),
-                desc=f"{targs}"
+                desc=str(targs).replace("'", "")
             )
             for vars in pbar:
                             
                 vars = sorted(vars)
-                pbar.set_postfix({'vars': f"{vars}"})
+                pbar.set_postfix({'vars': str(vars).replace("'", "")})
 
                 # We check if the combination of variables already exists
                 index_vars = self._index_of(
@@ -181,10 +182,6 @@ class DiscreteHandler(Handler):
                         })
                         index_ranges = -1
 
-                    # We reset the existing results if `overwrite` is True
-                    if overwrite :
-                        results[index_vars]["stats"][index_ranges]["stats"] = {}
-
                     # Ranges restriction
                     _rgs = {t: ref_dict["ranges"][t][r] for t, r in rgs.items()}
 
@@ -194,17 +191,32 @@ class DiscreteHandler(Handler):
 
                     entry = results[index_vars]["stats"][index_ranges]["stats"]
                     for stat in inputs_dict["statistics"]:
+                        if overwrite and stat in entry:
+                            entry.pop(stat, None)
+                    if set(entry.keys()) <= {"samples"}: # If no keys or only "samples"
+                        entry.pop("samples", None)
+
+                    for stat in inputs_dict["statistics"]:
+
+                        if stat in entry:
+                            continue
+                        entry.update({stat: {}})
 
                         operator = self.stats[stat]
 
                         self._compute_stat(
                             _X, _Y,
                             operator, stat,
-                            inputs_dict, entry
+                            inputs_dict, entry[stat]
                         ) # Modify `entry` in-place
                     
+                    samples = _Y.shape[0]
+                    prev_samples = entry.get("samples")
+                    if prev_samples is not None and samples != samples:
+                        raise ValueError("Old and new number of samples are differents.")
+
                     entry.update({
-                        "samples": _Y.shape[0]
+                        "samples": samples
                     })
 
                 # Save results (update for each variables iteration)
@@ -236,41 +248,34 @@ class DiscreteHandler(Handler):
         samples = Y.shape[0]
         if samples <= inputs_dict["min_samples"]:
             return {
-                f'{stat}': None,
-                f'{stat}-time': None,
-                f'{stat}-std': None
+                "value": None,
+                "time": None,
+                "std": None
             }
 
         # Simple computation
-        if entry.get(stat) is None:
-            try:
-                start = time()
-                value = operator(X, Y)
-                end = time()
-                entry.update({
-                    f'{stat}': value,
-                    f'{stat}-time': end-start,
-                })
-            except:
-                entry.update({
-                    f'{stat}': None,
-                    f'{stat}-time': None,
-                    f'{stat}-std': None
-                })
-                return entry
-        else:
+        try:
+            start = time()
+            value = operator(X, Y)
+            end = time()
             entry.update({
-                f'{stat}': entry[f'{stat}'],
-                f'{stat}-time': entry[f'{stat}-time'],
+                "value": value,
+                "time": end-start,
             })
+        except:
+            entry.update({
+                "value": None,
+                "time": None,
+                "std": None
+            })
+            return entry
 
         # Uncertainty
         try:
             d = inputs_dict["uncertainty"][stat]
             name, args = d["name"], d["args"]
         except:
-            if f'{stat}-std' not in entry:
-                entry[f'{stat}-std'] = None
+            entry["std"] = None
             return
 
         try:
@@ -278,7 +283,7 @@ class DiscreteHandler(Handler):
         except:
             std = None
         entry.update({
-            f'{stat}-std': std
+            "std": std
         })
 
         return entry
@@ -327,7 +332,25 @@ class DiscreteHandler(Handler):
             raise ValueError(f"Ranges of data {ranges} doesn't exist in data")
 
         return data
+    
+    def get_available_targets(
+        self
+    ):
+        raise NotImplementedError("")
 
+    def get_available_variables(
+        self,
+        targets: Union[str, List[str]],
+    ):
+        raise NotImplementedError("")
+
+    def get_available_stats(
+        self,
+        targets: Union[str, List[str]],
+        variables: Union[str, List[str]],
+        windows: Union[str, List[str]]
+    ):
+        raise NotImplementedError("")
 
     @staticmethod
     def _index_of(
@@ -358,16 +381,6 @@ class DiscreteHandler(Handler):
         except ValueError:
             index = None
         return index
-
-    @staticmethod
-    def _comb(
-        ls: Sequence,
-        repeats: Union[int, Sequence[int]]
-    ) -> List[Sequence]:
-        res = []
-        for r in repeats:
-            res += list(itt.combinations(ls, r))
-        return res
 
     @staticmethod
     def _list_ranges(
@@ -434,7 +447,7 @@ class DiscreteHandler(Handler):
         assert isinstance(inputs_dict[key], List)
         assert all([isinstance(el, (str, List)) for el in inputs_dict[key]])
         #
-        assert all([k in ref_dict[key] for k in inputs_dict[key]])
+        assert all([k in ref_dict[key] for k in inputs_dict[key] if isinstance(k, str)])
         #
 
         key = "n_variables"

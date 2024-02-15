@@ -8,7 +8,7 @@ from .statistics import Statistic
 
 __all__ = [
     "Resampling",
-    "Boostrapping",
+    "Bootstrapping",
     "Subsampling"
 ]
 

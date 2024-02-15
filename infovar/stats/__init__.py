@@ -1,12 +1,11 @@
-from . import statistics
 from . import entropy_estimators
 from . import canonical_estimators
-from . import ranking
 from . import info_theory
-from . import resampling
-from . import preprocessing
+from . import ranking
 
 from .statistics import *
+from .resampling import *
+from .preprocessing import *
 
 __all__ = []
 __all__.extend(statistics.__all__)
