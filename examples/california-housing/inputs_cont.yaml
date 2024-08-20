@@ -1,0 +1,24 @@
+windows:
+  - targets: MedHouseVal          # Target feature
+    features: MedHouseVal         # Sliding window feature
+    bounds: [50, 500]             # Sliding window bounds
+    bounds_include_windows: True  # The bounds does not correspond to the center of the extreme windows
+    scale: linear                 # No logarithmic scale
+    length: 100                   # A sliding window has a length of $100,000
+    points: 50                    # Number of sliding window used
+    
+min_samples: 200
+
+statistics:
+  - mi
+  - corr
+
+uncertainty:
+  mi:
+    name: subsampling
+    args:
+      n: 5
+  corr:
+    name: bootstrapping
+    args:
+      n: 20

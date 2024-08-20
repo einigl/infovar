@@ -1,6 +1,7 @@
 from typing import Optional, Union
 
 import numpy as np
+from tqdm import tqdm
 
 from scipy import stats, integrate
 
@@ -8,7 +9,8 @@ def prob_higher(
     mus: np.ndarray,
     sigmas: np.ndarray,
     idx: Optional[int]=None,
-    approx: bool=True
+    approx: bool=True,
+    pbar: bool=False,
 ) -> Union[np.ndarray, float]:
     """
     Returns the probability
@@ -42,7 +44,8 @@ def prob_higher(
     # If the user wants to compute all probabilities
     if idx is None:
         probs = np.zeros(n_vars)# * np.nan
-        for i in range(n_vars):
+        _iterable = tqdm(range(n_vars)) if pbar else range(n_vars)
+        for i in _iterable:
             if  significant[i]:
                 bounds = (mus[i]-n_sigma*sigmas[i], mus[i]+n_sigma*sigmas[i])
                 fun = lambda t: integrand(t, i)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Written by Greg Ver Steeg
+# Based on the package by Greg Ver Steeg
 # See readme.pdf for documentation
 # Or go to http://www.isi.edu/~gregv/npeet.html
 

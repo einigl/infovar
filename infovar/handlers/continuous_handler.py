@@ -20,35 +20,28 @@ __all__ = [
 
 class ContinuousHandler(Handler):
 
-    ref_path: str
     save_path: str
 
-    variables: Optional[np.ndarray]
-    targets: Optional[np.ndarray]
-    variable_names: Optional[List[str]]
-    target_names: Optional[List[str]]
+    getter: Callable[[List[str], List[str], Dict[str, Tuple[float, float]]], Tuple[np.ndarray, np.ndarray]]
 
     stats: Dict[str, Callable]
-    resamplings: Dict[str, Resampling]={},
-
-    fn_bounds: Optional[List[Optional[Callable]]]
-    inv_fn_bounds: Optional[List[Optional[Callable]]]
+    resamplings: Dict[str, Resampling]={}
 
 
     # Writing access
 
     def create(
         self,
-        targets: Union[str, Sequence[str]],
-        variables: Union[str, Sequence[str]]
+        x_names: Union[str, Sequence[str]],
+        y_names: Union[str, Sequence[str]]
     ):
         """
-        Create the statistics directory if not exists as well as the JSON files for targets in `targets`.
+        Create the statistics directory if not exists as well as the pickle file.
         """
         if not os.path.exists(self.save_path):
             os.makedirs(self.save_path)
         
-        path = self.get_filename(targets, variables)
+        path = self.get_filename(x_names, y_names)
         if not os.path.isfile(path):
             with open(path, 'wb') as f:
                 pickle.dump([], f)
@@ -57,7 +50,7 @@ class ContinuousHandler(Handler):
         self,
         targets: Optional[Sequence[Union[str, Sequence[str]]]],
         variables: Optional[Sequence[Union[str, Sequence[str]]]]
-    ) -> None:
+    ) -> None: # TODO
         """
         If `targets` and `variables` are both None, remove the whole directory if exists.
         If `targets` and `variables` are both not None, only remove the corresponding pickle file.
@@ -76,158 +69,209 @@ class ContinuousHandler(Handler):
 
     def delete_stats(
         self,
+        stats: Union[str, List[str]],
         targs: Union[str, List[str]],
-        stats: Union[str, List[str]]
+        vars: Optional[Union[str, List[str]]]=None
     ) -> None:
-        path = self._targets_to_filename(targs)
-        with open(path, 'rb') as f:
-            d = pickle.load(f)  # results is a list of dicts
+        if vars is None:
+            vars = self.get_available_variables(targs)
+        elif isinstance(vars, str):
+            vars = [vars]        
 
-        if isinstance(stats, str):
-            stats = [stats]
+        for v in vars:
+            path = self.get_filename(targs, v)
 
-        for stat in stats:
-            for item1 in d:
-                item2 = item1["stats"]
-                for key in [f'{stat}-coords', f'{stat}-data']:
-                    item2.pop(key, None)
+            with open(path, 'rb') as f:
+                d = pickle.load(f)
+
+            if isinstance(stats, str):
+                stats = [stats]
+
+            for stat in stats:
+                exists = False
+                for item in d:
+                    exists |= item["stats"].pop(stat, None) is not None 
+                
+                if exists:
+                    print(f"Removing {stat} in {os.path.basename(path)}")
+
+            with open(path, 'wb') as f:
+                pickle.dump(d, f)
+            os.rename(path, path)
 
     def update(
         self,
+        x_names: Union[str, List[str]],
+        y_names: Union[str, List[str]],
         inputs_dict: Dict[str, Any],
     ) -> None:
         self.store(
+            x_names,
+            y_names,
             inputs_dict,
             overwrite=False
         )
 
     def overwrite(
         self,
+        x_names: Union[str, List[str]],
+        y_names: Union[str, List[str]],
         inputs_dict: Dict[str, Any],
     ) -> None:
         self.store(
+            x_names,
+            y_names,
             inputs_dict,
             overwrite=True
         )
 
     def store(
         self,
+        x_names: Union[str, List[str]],
+        y_names: Union[str, List[str]],
         inputs_dict: Dict[str, Any],
-        overwrite: bool=False
+        overwrite: bool=False,
+        raise_error: bool=True
     ):
         """
         Inputs_dict:
         - TODO
         """
-
-        # Load the reference 
-        with open(self.ref_path, 'r') as f:
-            ref_dict = yaml.safe_load(f)  # results is a list of dicts
+        if self.getter is None:
+            raise RuntimeError("You must call self.set_getter before calling self.update, self.overwrite or self.store.")
 
         # Checks that the file is in the expected format.
-        # In particular, checks that variables, targets and ranges are in the reference file.
-        self._check_inputs(
+        inputs_dict = self._check_inputs(
             inputs_dict,
-            ref_dict,
         )
 
-        # Targets loop
-        for targs in inputs_dict['targets']:
-            if isinstance(targs, str):
-                targs = [targs]
-            targs = sorted(targs)
+        if isinstance(x_names, str):
+            x_names = [x_names]
+        if isinstance(y_names, str):
+            y_names = [y_names]
 
-            # Variables loop
-            pbar = tqdm(
-                self._comb(inputs_dict['variables'], inputs_dict['n_variables']),
-                desc=str(targs).replace("'", "")
+        x_names, y_names = sorted(x_names), sorted(y_names)
+
+        # Create directory of not exists
+        self.create(x_names, y_names)
+
+        # Load existing data
+        path = self.get_filename(x_names, y_names)
+        with open(path, 'rb') as f:
+            results = pickle.load(f)  # results is a list of dicts
+
+        # Windows loop
+        for wins in inputs_dict['windows']:
+
+            wins = wins.copy()
+            # for key in ['features', 'bounds', 'scale', 'length', 'points']: TODO
+            #     if key not in wins:
+            #         wins[key] = [None]
+            #     elif not isinstance(wins[key], List):
+            #         wins[key] = [wins[key]]
+
+            # We check if the data already exists
+            index_windows = self._index_of_data(
+                results, value=wins['features'], key="features"
             )
-            for vars in pbar:
-                if isinstance(vars, str):
-                    vars = [vars]
-                vars = sorted(vars)
-                pbar.set_postfix({'vars': str(vars).replace("'", "")})
 
-                # Create directory of not exists
-                self.create(targs, vars)
+            # We create an entry if it doesn't exists
+            if index_windows is None:
+                results.append({
+                    "features": wins['features'],
+                    "stats": {},
+                })
+                index_windows = -1
 
-                if isinstance(targs, str):
-                    targs = [targs]
-                if isinstance(vars, str):
-                    vars = [vars]
+            entry = results[index_windows]["stats"]
+            for stat in inputs_dict["statistics"]:
 
-                # Load existing data
-                path = self.get_filename(targs, vars)
-                with open(path, 'rb') as f:
-                    results = pickle.load(f)  # results is a list of dicts
+                # We pass if the existing statistic exists and that overwrite is False
+                if not overwrite and stat in entry:
+                    continue
+                if stat not in entry:
+                    entry.update({stat: {}})
 
-                # Windows loop
-                for wins in inputs_dict['windows']:
+                operator = self.stats[stat] # Callable(ndarray, ndarray) -> float
 
-                    wins = wins.copy()
-                    for key in ['targets', 'length', 'points']:
-                        if not isinstance(wins[key], List):
-                            wins[key] = [wins[key]]
+                self._compute_stat(
+                    x_names, y_names, wins,
+                    operator, stat,
+                    inputs_dict, entry[stat],
+                    raise_error=raise_error
+                ) # Modify `entry` in-place
 
-                    # We check if the data already exists
-                    index_windows = self._index_of_data(
-                        results, value=wins['targets'], key="windows"
-                    )
-
-                    # We create an entry if it doesn't exists
-                    if index_windows is None:
-                        results.append({
-                            "windows": wins['targets'],
-                            "stats": {},
-                        })
-                        index_windows = -1
-
-                    entry = results[index_windows]["stats"]
-                    for stat in inputs_dict["statistics"]:
-
-                        # We pass if the existing statistic exists and that overwrite is False
-                        if not overwrite and stat in entry:
-                            continue
-                        if stat not in entry:
-                            entry.update({stat: {}})
-
-                        operator = self.stats[stat] # Callable(ndarray, ndarray) -> float
-
-                        self._compute_stat(
-                            targs, vars, wins,
-                            operator, stat,
-                            inputs_dict, entry[stat]
-                        ) # Modify `entry` in-place
-
-                    # Save results (update for each ranges iteration)
-                    with open(self.get_filename(targs, vars), 'wb') as f:
-                        pickle.dump(results, f)
+            # Save results (update for each ranges iteration)
+            with open(self.get_filename(x_names, y_names), 'wb') as f:
+                pickle.dump(results, f)
 
     def _compute_stat(
         self,
-        targs: List[str], vars: List[str], wins: Dict[str, Any],
+        x_names: List[str], y_names: List[str], wins: Dict[str, Any],
         operator: Statistic, stat: str,
-        inputs_dict: Dict[str, Any], entry: Dict[str, Any]
+        inputs_dict: Dict[str, Any], entry: Dict[str, Any],
+        raise_error: bool=True # TODO
     ) -> Dict[str, Any]:
-        
+        """
+        wins:
+        - features: List[str]
+        - bounds: List[Tuple[float, float]]
+        - bounds_include_windows: bool
+        - scale: List[Literal[lin, log]]
+        - length: List[float]
+        - num_windows: List[float]
+        - points: List[int]
+        - overlap: List[Union[float, str]]
+
+        Incompatible wins options:
+        - length ou num_window
+        - points ou overlap
+        """
+
+        if 'length' not in wins:
+            wins['length'] = [None] * len(wins['features'])
+        if 'points' not in wins:
+            wins['points'] = [None] * len(wins['features'])
+
         coords = []
         bounds = []
-        for targ, perc, pts in zip(wins['targets'], wins['length'], wins['points']):
-            arr = self.targets[:, self.target_names.index(targ)]
-            winsize = (perc/100 if perc>=1 else perc) * np.ptp(arr)
-            low, high = np.min(arr), np.max(arr)
+        for i, ((low, upp), winsize, pts, sc) in enumerate(zip(
+            wins['bounds'], wins['length'], wins['points'], wins['scale']
+        )):
+            if winsize is None:
+                winsize = (upp/low)**(1/wins['num_windows'][i]) if sc == 'log'\
+                    else 1/wins['num_windows'][i] * (upp-low)
 
-            if self.inv_fn_bounds is None:
-                inv_fn = None
-            else:
-                inv_fn = self.inv_fn_bounds[self.target_names.index(targ)]
+            if pts is None:
+                ovp = wins['overlap'][i]
+                if isinstance(ovp, str):
+                    ovp = ovp.strip()
+                    if ovp.endswith("%"):
+                        ovp = float(ovp.removesuffix("%"))
+                    else:
+                        raise ValueError("Incorrect string overlap value (must include the % symbol)")
+                    ovp = winsize / ovp
 
-            if inv_fn is None:
-                inv_fn = lambda t: t
-
-            xticks = np.linspace(low+winsize/2, high-winsize/2, pts)
-            bounds.append( (inv_fn(xticks-winsize/2), inv_fn(xticks+winsize/2)) )
-            coords.append(inv_fn(xticks))
+            if sc == 'log':
+                padd = np.sqrt(winsize) if wins['bounds_include_windows'] else 1.
+                if pts is None:
+                    pts = (upp/low * padd**2) / ovp
+                    pts = round(pts)
+                xticks = np.logspace(
+                    np.log10(low*padd), np.log10(upp/padd), pts
+                )
+                bounds.append((xticks/padd, xticks*padd))
+                coords.append(xticks)
+            else: # lin or None
+                padd = winsize/2 if wins['bounds_include_windows'] else 0.
+                if pts is None:
+                    pts = (upp-low + 2*padd) / ovp
+                    pts = round(pts)
+                xticks = np.linspace(
+                    low+padd, upp-padd, pts
+                )
+                bounds.append((xticks-padd, xticks+padd))
+                coords.append(xticks)
 
         data = np.zeros(wins['points'])
         samples = np.zeros(wins['points'])
@@ -243,12 +287,12 @@ class ContinuousHandler(Handler):
             itt.product(*[range(n) for n in wins['points']]),
             total=np.prod(wins['points']),
             leave=False,
-            desc=f"Stat: {stat}, window: " + str(wins['targets']).replace("'", "")
+            desc=f"Stat: {stat}, window: " + str(wins['features']).replace("'", "")
         )
         for ii in pbar:
-            ranges = {key: [b[0][i], b[1][i]] for i, b, key in zip(ii, bounds, wins['targets'])}
-            _X, _Y = self._filter_data(
-                vars, targs, ranges
+            restrict = {key: [b[0][i], b[1][i]] for i, b, key in zip(ii, bounds, wins['features'])}
+            _X, _Y = self.getter(
+                x_names, y_names, restrict, inputs_dict['max_samples']
             )
 
             # Samples
@@ -289,31 +333,31 @@ class ContinuousHandler(Handler):
 
     def read(
         self,
-        targs: Union[str, Sequence[str]],
-        vars: Union[str, Sequence[str]],
-        wins_targs: Union[str, Sequence[str]]
+        x_names: Union[str, Sequence[str]],
+        y_names: Union[str, Sequence[str]],
+        wins_features: Union[str, Sequence[str]]
     ) -> Dict[str, Any]:
         # Formatting
-        if isinstance(targs, str):
-            targs = [targs]
-        if isinstance(vars, str):
-            vars = [vars]
-        if isinstance(wins_targs, str):
-            wins_targs = [wins_targs]
+        if isinstance(x_names, str):
+            x_names = [x_names]
+        if isinstance(y_names, str):
+            y_names = [y_names]
+        if isinstance(wins_features, str):
+            wins_features = [wins_features]
 
         # Load data
-        path = self.get_filename(targs, vars)
+        path = self.get_filename(x_names, y_names)
         if not os.path.exists(path):
             raise FileNotFoundError(f"File {path} not exists yet.")
         with open(path, 'rb') as f:
             data = pickle.load(f)  # data is a list of dicts
 
         # Find the good windows
-        names = set(wins_targs)
+        names = set(wins_features)
         found = False
         for item in data:
-            if set(item["windows"]) == names:
-                data = item["stats"]
+            if set(item["features"]) == names:
+                data = item
                 found = True
                 break
         if not found:
@@ -321,31 +365,33 @@ class ContinuousHandler(Handler):
 
         return data
 
-    def get_available_targets(
-        self
-    ):
-        raise NotImplementedError("")
-
     def get_available_variables(
         self,
-        targets: Union[str, List[str]],
+        x_names: Union[None, str, List[str]],
+        y_names: Union[None, str, List[str]]
     ):
-        raise NotImplementedError("")
+        raise NotImplementedError("TODO")
+        if isinstance(targets, str):
+            targets = [targets]
+        files = os.listdir(self.save_path)
+        files = [f.replace(".pickle", "").split("__", 1) for f in files if f.endswith(".pickle")]
+        vars = [s2.split("_") for s1, s2 in files if set(s1.split("_")) == set(targets)]
+        return vars
 
-    def get_available_windows(
+    def get_available_window_features(
         self,
-        targets: Union[str, List[str]],
-        variables: Union[str, List[str]]
+        x_names: Union[str, List[str]],
+        y_names: Union[str, List[str]]
     ):
-        raise NotImplementedError("")
+        raise NotImplementedError("TODO")
 
     def get_available_stats(
         self,
-        targets: Union[str, List[str]],
-        variables: Union[str, List[str]],
-        windows: Union[str, List[str]]
+        x_names: Union[str, List[str]],
+        y_names: Union[str, List[str]],
+        window_features: Union[str, List[str]]
     ):
-        raise NotImplementedError("")
+        raise NotImplementedError("TODO")
 
     @staticmethod
     def _index_of_data(
@@ -364,37 +410,48 @@ class ContinuousHandler(Handler):
     
     def get_filename(
         self,
-        targets: Union[str, Sequence[str]],
-        variables: Union[str, Sequence[str]]
+        x_names: Union[str, Sequence[str]],
+        y_names: Union[str, Sequence[str]]
     ) -> str:
-        if isinstance(targets, str):
-            targets = [targets]
-        if isinstance(variables, str):
-            targets = [variables]
-        _targets = "_".join(sorted(targets)) + "__" + "_".join(sorted(variables))
-        return os.path.join(self.save_path, _targets + '.pickle')
+        if isinstance(x_names, str):
+            x_names = [x_names]
+        if isinstance(y_names, str):
+            y_names = [y_names]
+        filename = "_".join(sorted(y_names)) + "__" + "_".join(sorted(x_names))
+        return os.path.join(self.save_path, filename + '.pickle')
 
     def _check_inputs(
         self,
-        inputs_dict: Dict[str, Any],
-        ref_dict: Dict[str, Any]
-    ) -> None:
-        # Reference file
+        inputs_dict: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        windows:
+        - targets: str or List[str]
+          features: str or List[str]
+          bounds: List[int, int] or List[List[int, int]]
+          bounds_include_windows: bool or List[bool] (optional)
+          scale: Literal[linear, log] or List[Literal[linear, log]] (optional)
+          length: float or str or List[float or str] (optional, length ^ num_windows)
+          num_windows: float or List[float] (optional, length ^ num_windows)
+          points: int or List[int] (optional, points ^ overlap)
+          overlap: float or str or List[float or str] (optional, points ^ overlap)
+            
+        min_samples: int (optional)
+        max_samples: int (optional)
 
-        key = "variables"
-        assert isinstance(ref_dict[key], List)
-        assert all([isinstance(el, (str, List)) for el in ref_dict[key]])
+        statistics: List[str]
 
-        key = "targets"
-        assert isinstance(ref_dict[key], List)
-        assert all([isinstance(el, (str, List)) for el in ref_dict[key]])
-
-
-        # Inputs file
-
+        uncertainty (optional):
+            str:
+                name: str
+                args:
+                    arg1: Any
+                    ...
+            ...
+        """
+        inputs_dict = inputs_dict.copy()
+        
         mandatory_keys = [
-            "variables",
-            "targets",
             "windows",
             "statistics",
         ]
@@ -402,8 +459,8 @@ class ContinuousHandler(Handler):
             assert key in inputs_dict
 
         optional_keys = [
-            "n_variables",
             "min_samples",
+            "max_samples",
             "uncertainty"
         ]
 
@@ -411,37 +468,74 @@ class ContinuousHandler(Handler):
             if key not in mandatory_keys:
                 assert key in optional_keys
 
-        key = "variables"
-        assert isinstance(inputs_dict[key], List)
-        # assert all([isinstance(el, str) for el in inputs_dict[key]]) TODO
-        #
-        assert all([el in ref_dict[key] for el in inputs_dict[key] if isinstance(el, str)])
-        #
-
-        key = "targets"
-        assert isinstance(inputs_dict[key], List)
-        # assert all([isinstance(el, (str, List)) for el in inputs_dict[key]]) TODO
-        #
-        assert all([el in ref_dict[key] for el in inputs_dict[key] if isinstance(el, str)])
-        #
-
-        key = "n_variables"
-        if key not in inputs_dict:
-            inputs_dict[key] = [1]
-        if isinstance(inputs_dict[key], int):
+        key = "windows"
+        if isinstance(inputs_dict[key], Dict):
             inputs_dict[key] = [inputs_dict[key]]
         assert isinstance(inputs_dict[key], List)
-        assert all([isinstance(el, int) for el in inputs_dict[key]])
-
-        key = "windows"
-        assert isinstance(inputs_dict[key], List)
         assert all([isinstance(el, Dict) for el in inputs_dict[key]])
-        # TODO
+        mandatory_window_keys = ["targets", "features", "bounds"]
+        optional_window_keys = ["bounds_include_windows", "scale"]
+        special_window_keys_1 = ["length", "num_windows"]
+        special_window_keys_2 = ["points", "overlap"]
+        for d in inputs_dict[key]:
+            assert set(d.keys()) <= set(mandatory_window_keys\
+                + optional_window_keys + special_window_keys_1 + special_window_keys_2)
+            for name in mandatory_window_keys:
+                assert name in d
+            assert sum([name in d for name in special_window_keys_1]) == 1
+            assert sum([name in d for name in special_window_keys_2]) == 1
+
+            if isinstance(d["features"], str):
+                d["features"] = [d["features"]]
+            assert isinstance(d["features"], List)
+            if isinstance(d["bounds"], List) and not isinstance(d["bounds"][0], List):
+                d["bounds"] = [d["bounds"]]
+            assert isinstance(d["bounds"], List)
+            if "bounds_include_windows" in d:
+                if isinstance(d["bounds_include_windows"], bool):
+                    d["bounds_include_windows"] = [d["bounds_include_windows"]]
+                assert isinstance(d["bounds_include_windows"], List)
+            if "scale" in d:
+                if isinstance(d["scale"], str):
+                    d["scale"] = [d["scale"]]
+                assert isinstance(d["scale"], List)
+            if "length" in d:
+                if isinstance(d["length"], (float, int)):
+                    d["length"] = [d["length"]]
+                assert isinstance(d["length"], List)
+            if "num_windows" in d:
+                if isinstance(d["num_windows"], (float, int)):
+                    d["num_windows"] = [d["num_windows"]]
+                assert isinstance(d["num_windows"], List)
+            if "points" in d:
+                if isinstance(d["points"], int):
+                    d["points"] = [d["points"]]
+                assert isinstance(d["points"], List)
+            if "overlap" in d:
+                if isinstance(d["overlap"], (str, float, int)):
+                    d["overlap"] = [d["overlap"]]
+                assert isinstance(d["overlap"], List)
+
+            # Percents
+            for name in ["length", "overlap"]:
+                if name not in d:
+                    continue
+                for i, el in enumerate(d[name]):
+                    if isinstance(el, str):
+                        el = el.trim()
+                        assert el[-1] == "%"
+                        d[i] = el.trim()
+                    assert isinstance(el, (float, int, str))
 
         key = "min_samples"
         if key not in inputs_dict:
             inputs_dict[key] = 0
         assert isinstance(inputs_dict[key], int)
+
+        key = "max_samples"
+        if key not in inputs_dict:
+            inputs_dict[key] = None
+        assert isinstance(inputs_dict[key], int) or inputs_dict[key] is None
 
         key = "statistics"
         if isinstance(inputs_dict[key], str):

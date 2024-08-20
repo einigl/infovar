@@ -1,9 +1,9 @@
 import os
 import shutil
 import json
-import yaml
+import warnings
 import itertools as itt
-from typing import List, Dict, Any, Tuple, Union, Optional, Sequence, Callable
+from typing import List, Dict, Any, Tuple, Union, Optional, Sequence, Callable, Iterable
 from time import time
 
 import numpy as np
@@ -21,63 +21,64 @@ __all__ = [
 
 class DiscreteHandler(Handler):
 
-    ref_path: str
     save_path: str
 
-    variables: Optional[np.ndarray]
-    targets: Optional[np.ndarray]
-    variable_names: Optional[List[str]]
-    target_names: Optional[List[str]]
+    getter: Callable[[List[str], List[str], Dict[str, Tuple[float, float]]], Tuple[np.ndarray, np.ndarray]]
 
-    additional_stats: Dict[str, Callable]
-    additional_resamplings: Dict[str, Resampling]={},
+    stats: Dict[str, Callable]
+    resamplings: Dict[str, Resampling]={}
 
-    fn_bounds: Optional[List[Optional[Callable]]]
-    inv_fn_bounds: Optional[List[Optional[Callable]]]
+    restrictions: Optional[Dict[str, Dict]]=None
+
+
+    # Setter
+
+    def set_restrictions(self, d: Dict[str, Dict]) -> None:
+        self.restrictions = d
 
 
     # General
 
     def get_filename(
         self,
-        targets: Union[str, Sequence[str]]
+        y_names: Union[str, Sequence[str]]
     ) -> str:
-        if isinstance(targets, str):
-            targets = [targets]
-        _targets = "_".join(sorted(targets))
-        return os.path.join(self.save_path, _targets + '.json')
+        if isinstance(y_names, str):
+            y_names = [y_names]
+        _y_names = "_".join(sorted(y_names))
+        return os.path.join(self.save_path, _y_names + '.json')
 
 
     # Writing access
 
     def create(
         self,
-        targets: Union[str, Sequence[str]]
+        y_names: Union[str, Sequence[str]]
     ):
         """
-        Create the statistics directory if not exists as well as the JSON files for targets in `targets`.
+        Create the statistics directory if not exists as well as the JSON files for features in `y_names`.
         """
         if not os.path.exists(self.save_path):
             os.makedirs(self.save_path)
         
-        path = self.get_filename(targets)
+        path = self.get_filename(y_names)
         if not os.path.isfile(path):
             with open(path, 'w', encoding="utf-8") as f:
                 json.dump([], f, ensure_ascii=False, indent=4)
 
     def remove(
         self,
-        targets: Optional[Sequence[Union[str, Sequence[str]]]]
+        y_names: Optional[Sequence[Union[str, Sequence[str]]]]
     ) -> None:
         """
-        If `targets` is None, remove the whole directory if exists.
-        If `targets` is not None, only remove the corresponding JSON files.
+        If `y_names` is None, remove the whole directory if exists.
+        If `y_names` is not None, only remove the corresponding JSON files.
         """
-        if targets is None:
+        if y_names is None:
             if os.path.exists(self.save_path):
                 shutil.rmtree(self.save_path)
 
-        for tar in targets:
+        for tar in y_names:
             path = self.get_filename(tar)
             if os.path.isfile(path):
                 os.remove(path)
@@ -101,133 +102,190 @@ class DiscreteHandler(Handler):
                     for key in [f'{stat}', f'{stat}-time', f'{stat}-boot']:
                         item3.pop(key, None)
 
-        with open(path, 'w', encoding="utf-8") as f:
+        with open(path + ".tmp", 'w', encoding="utf-8") as f:
             json.dump(d, f, ensure_ascii=False, indent=4)
+        os.rename(path + ".tmp", path)
+
+    def update(
+        self,
+        x_names: Union[str, List[str]],
+        y_names: Union[str, List[str]],
+        inputs_dict: Dict[str, Any],
+        **kwargs
+    ) -> None:
+        self.store(
+            x_names,
+            y_names,
+            inputs_dict,
+            overwrite=False,
+            **kwargs
+        )
+
+    def overwrite(
+        self,
+        x_names: Union[str, List[str]],
+        y_names: Union[str, List[str]],
+        inputs_dict: Dict[str, Any],
+        **kwargs
+    ) -> None:
+        self.store(
+            x_names,
+            y_names,
+            inputs_dict,
+            overwrite=True,
+            **kwargs
+        )
 
     def store(
         self,
+        x_names: Union[str, List[str], Iterable[List[str]]],
+        y_names: Union[str, List[str]],
         inputs_dict: Dict[str, Any],
-        overwrite: bool=False
+        overwrite: bool=False,
+        iterable_x: bool=False,
+        save_every: int=1,
+        progress_bar: bool=True,
+        total_iter: int=None,
+        raise_error: bool=True
     ):
         """
         Inputs_dict:
         - TODO
         """
-        # Process ranges (cartesian product, concatenation, etc)
-        ranges = self._list_ranges(
-            inputs_dict["ranges"]
-        )
-
-        # Load the reference 
-        with open(self.ref_path, 'r') as f:
-            ref_dict = yaml.safe_load(f)  # results is a list of dicts
 
         # Checks that the file is in the expected format.
-        # In particular, checks that variables, targets and ranges are in the reference file.
         self._check_inputs(
             inputs_dict,
-            ref_dict,
         )
 
-        # Targets loop
-        for targs in inputs_dict['targets']:
+        if isinstance(y_names, str):
+            y_names = [y_names]
 
-            # Create directory of not exists
-            self.create(targs)
+        y_names = sorted(y_names)
 
-            if isinstance(targs, str):
-                targs = [targs]
+        # Create directory of not exists
+        self.create(y_names)
 
-            # Load existing data
-            path = self.get_filename(targs)
-            with open(path, 'r') as f:
-                results = json.load(f)  # results is a list of dicts
+        # Load existing data
+        path = self.get_filename(y_names)
+        with open(path, 'r') as f:
+            results = json.load(f)  # results is a list of dicts
 
-            # Variables loop
-            pbar = tqdm(
-                self._comb(inputs_dict['variables'], inputs_dict['n_variables']),
-                desc=str(targs).replace("'", "")
+        # Variables loop
+        if iterable_x:
+            assert isinstance(x_names, Iterable) and not isinstance(x_names, str)
+        if isinstance(x_names, str):
+            x_names = [x_names]
+
+        pbar = tqdm(
+            x_names,
+            desc=str(y_names).replace("'", ""),
+            total=total_iter,
+            disable=not progress_bar
+        )
+        for it, _x_names in enumerate(pbar, 1):
+            if isinstance(_x_names, str):
+                _x_names = [_x_names]    
+
+            _lines = list(set(_x_names))
+            pbar.set_postfix({'x': str(_lines).replace("'", "")})
+
+            _x_names = list(set(_x_names))            
+            _x_names = sorted(_x_names)
+
+            # We check if the combination of variables already exists
+            index_x = self._index_of(
+                results, value=_x_names, key="x_names"
             )
-            for vars in pbar:
-                            
-                vars = sorted(vars)
-                pbar.set_postfix({'vars': str(vars).replace("'", "")})
 
-                # We check if the combination of variables already exists
-                index_vars = self._index_of(
-                    results, value=vars, key="vars"
+            # We create an entry if it doesn't exists
+            if index_x is None:
+                results.append({
+                    "x_names": _x_names,
+                    "stats": [],
+                })
+                index_x = -1
+
+            # Ranges loop
+            for restr in inputs_dict["restrictions"]: # TODO: "restrictions" field can be None
+
+                # We check if ranges already exists
+                index_ranges = self._index_of_ranges(
+                    results[index_x]["stats"], value=restr, key="restriction"
                 )
 
                 # We create an entry if it doesn't exists
-                if index_vars is None:
-                    results.append({
-                        "vars": vars,
-                        "stats": [],
+                if index_ranges is None:
+                    results[index_x]["stats"].append({
+                        "restriction": restr,
+                        "stats": {},
                     })
-                    index_vars = -1
+                    index_ranges = -1
 
-                # Ranges loop
-                for rgs in ranges:
+                # Ranges restriction
+                if self.restrictions is not None and restr is not None:
+                    restrict_dict = self.restrictions[restr]
+                elif self.restrictions is not None:
+                    raise ValueError(f"self.restriction must not be None when the restriction asked is not None (here {restr}). Consider using set_restrictions to load the dictionnary.")
+                else:
+                    restrict_dict = {}
 
-                    # We check if ranges already exists
-                    index_ranges = self._index_of_ranges(
-                        results[index_vars]["stats"], value=rgs, key="ranges"
-                    )
+                _X, _Y = self.getter(
+                    _x_names, y_names, restrict_dict, inputs_dict.get('max_samples')
+                )
 
-                    # We create an entry if it doesn't exists
-                    if index_ranges is None:
-                        results[index_vars]["stats"].append({
-                            "ranges": rgs,
-                            "stats": {},
-                        })
-                        index_ranges = -1
+                entry = results[index_x]["stats"][index_ranges]["stats"]
+                for stat in inputs_dict["statistics"]:
+                    if overwrite and stat in entry:
+                        entry.pop(stat, None)
+                if set(entry.keys()) <= {"samples"}: # If no keys or only "samples"
+                    entry.pop("samples", None)
 
-                    # Ranges restriction
-                    _rgs = {t: ref_dict["ranges"][t][r] for t, r in rgs.items()}
+                for stat in inputs_dict["statistics"]:
 
-                    _X, _Y = self._filter_data(
-                        vars, targs, _rgs
-                    )
+                    if stat in entry:
+                        continue
+                    entry.update({stat: {}})
 
-                    entry = results[index_vars]["stats"][index_ranges]["stats"]
-                    for stat in inputs_dict["statistics"]:
-                        if overwrite and stat in entry:
-                            entry.pop(stat, None)
-                    if set(entry.keys()) <= {"samples"}: # If no keys or only "samples"
-                        entry.pop("samples", None)
+                    operator = self.stats[stat]
 
-                    for stat in inputs_dict["statistics"]:
+                    self._compute_stat(
+                        _X, _Y,
+                        operator, stat,
+                        inputs_dict, entry[stat],
+                        raise_error=raise_error
+                    ) # Modify `entry` in-place
+                
+                samples = _Y.shape[0]
+                prev_samples = entry.get("samples")
+                if prev_samples is not None and samples != samples:
+                    raise ValueError("Old and new number of samples are differents.")
 
-                        if stat in entry:
-                            continue
-                        entry.update({stat: {}})
+                entry.update({
+                    "samples": samples
+                })
 
-                        operator = self.stats[stat]
-
-                        self._compute_stat(
-                            _X, _Y,
-                            operator, stat,
-                            inputs_dict, entry[stat]
-                        ) # Modify `entry` in-place
-                    
-                    samples = _Y.shape[0]
-                    prev_samples = entry.get("samples")
-                    if prev_samples is not None and samples != samples:
-                        raise ValueError("Old and new number of samples are differents.")
-
-                    entry.update({
-                        "samples": samples
-                    })
-
-                # Save results (update for each variables iteration)
-                with open(self.get_filename(targs), 'w', encoding="utf-8") as f:
+            # Save results
+            
+            if it % save_every == 0:
+                path = self.get_filename(y_names)
+                with open(path + ".tmp", 'w', encoding="utf-8") as f:
                     json.dump(results, f, ensure_ascii=False, indent=4)
+                os.rename(path + ".tmp", path)
+
+        # Final save
+        
+        path = self.get_filename(y_names)
+        with open(path + ".tmp", 'w', encoding="utf-8") as f:
+            json.dump(results, f, ensure_ascii=False, indent=4)
+        os.rename(path + ".tmp", path)
 
     def _compute_stat(
         self,
         X: np.ndarray, Y: np.ndarray,
         operator: Statistic, stat: str,
-        inputs_dict: Dict[str, Any], entry: Dict[str, Any]
+        inputs_dict: Dict[str, Any], entry: Dict[str, Any],
+        raise_error: bool=True
     ) -> Dict[str, Any]:
         """
         Modifies in-place the `entry` dictionnary.
@@ -262,7 +320,9 @@ class DiscreteHandler(Handler):
                 "value": value,
                 "time": end-start,
             })
-        except:
+        except Exception as e:
+            if raise_error:
+                raise e
             entry.update({
                 "value": None,
                 "time": None,
@@ -274,13 +334,17 @@ class DiscreteHandler(Handler):
         try:
             d = inputs_dict["uncertainty"][stat]
             name, args = d["name"], d["args"]
-        except:
+        except Exception as e:
+            if raise_error:
+                raise e
             entry["std"] = None
             return
 
         try:
             std = self.resamplings[name].compute_sigma(X, Y, operator, **args)
-        except:
+        except Exception as e:
+            if raise_error:
+                raise e
             std = None
         entry.update({
             "std": std
@@ -290,66 +354,139 @@ class DiscreteHandler(Handler):
 
     # Reading access
 
+    def _get_variables_content(
+        self,
+        x_names: List[str],
+        data: List[Dict[str, Any]]
+    ) -> Optional[List[Dict]]:
+        _x_names = set(x_names)
+        for _item in data:
+            if set(_item["x_names"]) == _x_names:
+                item = _item["stats"]
+                return item
+        return None
+    
+    def _get_restriction_content(
+        self,
+        restr: str,
+        data: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        for _item in data:
+            if _item["restriction"] == restr:
+                item = _item["stats"]
+                return item
+        return None
+
     def read(
         self,
-        targs: Union[str, Sequence[str]],
-        vars: Union[str, Sequence[str]],
-        ranges: Dict[str, str],
+        x_names: Union[str, List[str], Iterable[List[str]]],
+        y_names: Union[str, List[str]],
+        restr: str,
+        iterable_x: bool=False,
+        default: Any="raise"
     ):
-        if isinstance(vars, str):
-            vars = [vars]
-        if isinstance(vars, tuple):
-            vars = list(vars)
+        if isinstance(x_names, str):
+            x_names = [x_names]
 
-        # TODO pour les targets, il faut trier par ordre alphabétique
+        if isinstance(y_names, str):
+            y_names = [y_names]
+        assert isinstance(y_names, List)
 
         # Load data
-        path = self.get_filename(targs)
+        path = self.get_filename(y_names)
         if not os.path.exists(path):
             raise FileNotFoundError(f"File {path} not exists yet.")
         with open(path, 'r') as f:
             data = json.load(f)  # results is a list of dicts
 
-        # Find the good set of variables
-        vars = set(vars)
-        found = False
-        for item in data:
-            if set(item["vars"]) == vars:
-                data = item["stats"]
-                found = True
-                break
-        if not found:
-            raise ValueError(f"Variables {vars} doesn't exist in data")
+        if not iterable_x:
+            x_names = [x_names]
 
-        # Find the good ranges
-        found = False
-        for item in data:
-            if item["ranges"] == ranges:
-                data = item["stats"]
-                found = True
-                break
-        if not found:
-            raise ValueError(f"Ranges of data {ranges} doesn't exist in data")
+        item_list = []
+        for _x_names in x_names:
+            if isinstance(_x_names, str):
+                _x_names = [_x_names]
 
-        return data
+            # Find the good set of variables
+            item = self._get_variables_content(_x_names, data)
+            if item is None:
+                if default == "raise":
+                    msg = f"Variables {_x_names} doesn't exist in data."
+                    if any([isinstance(el, (List, Tuple)) for el in _x_names]):
+                        msg += f" It seems that you provide an Iterable, did you missed setting the `iterable_x` flag?"
+                    raise ValueError(msg)
+                item_list.append(default)
+                continue
+
+            # Find the good restriction
+            item = self._get_restriction_content(restr, item)
+            if item is None:
+                if default == "raise":
+                    raise ValueError(f"Restriction of data {restr} doesn't exist in data")
+                item = default
+
+            # Store value
+            item_list.append(item)
+
+        if iterable_x:
+            return item_list
+        return item_list[0]
     
     def get_available_targets(
         self
-    ):
-        raise NotImplementedError("")
+    ) -> List[List[str]]:
+        """
+        TODO
+        """
+        filenames = [
+            f.replace(".json", "") for f in os.listdir(self.save_path) if f.endswith(".json")
+        ]
+        return [
+            f.split("_") for f in filenames
+        ]
 
     def get_available_variables(
         self,
         targets: Union[str, List[str]],
-    ):
-        raise NotImplementedError("")
+    ) -> List[List[str]]:
+        """
+        TODO
+        """
+        # Load data
+        path = self.get_filename(targets)
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"File {path} not exists yet.")
+        with open(path, 'r') as f:
+            data = json.load(f)  # results is a list of dicts
+
+        return [item["x_names"] for item in data]
+    
+    def get_available_restrictions(
+        self,
+        targets: Union[str, List[str]],
+        variables: Union[str, List[str]]
+    ) -> List[str]:
+        """
+        TODO
+        """
+        # Load data
+        path = self.get_filename(targets)
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"File {path} not exists yet.")
+        with open(path, 'r') as f:
+            data = json.load(f)  # results is a list of dicts
+
+        # Get variables content
+        data = self._get_variables_content(variables, data)
+
+        return [item["restriction"] for item in data]
 
     def get_available_stats(
         self,
         targets: Union[str, List[str]],
         variables: Union[str, List[str]],
-        windows: Union[str, List[str]]
-    ):
+        restriction: Union[str, List[str]]
+    ) -> List[str]:
         raise NotImplementedError("")
 
     @staticmethod
@@ -400,95 +537,11 @@ class DiscreteHandler(Handler):
     def _check_inputs(
         self,
         inputs_dict: Dict[str, Any],
-        ref_dict: Dict[str, Any]
     ) -> None:
-        # Reference file
 
-        key = "variables"
-        assert isinstance(ref_dict[key], List)
-        assert all([isinstance(el, (str, List)) for el in ref_dict[key]])
-
-        key = "targets"
-        assert isinstance(ref_dict[key], List)
-        assert all([isinstance(el, (str, List)) for el in ref_dict[key]])
-
-        key = "ranges"
         # TODO
-
-        # Inputs file
-
-        mandatory_keys = [
-            "variables",
-            "targets",
-            "statistics",
-        ]
-        for key in mandatory_keys:
-            assert key in inputs_dict
-
-        optional_keys = [
-            "n_variables",
-            "ranges",
-            "min_samples",
-            "uncertainty"
-        ]
-
-        for key in inputs_dict:
-            if key not in mandatory_keys:
-                assert key in optional_keys
-
-        key = "variables"
-        assert isinstance(inputs_dict[key], List)
-        assert all([isinstance(el, str) for el in inputs_dict[key]])
-        #
-        assert all([k in ref_dict[key] for k in inputs_dict[key]])
-        #
-
-        key = "targets"
-        assert isinstance(inputs_dict[key], List)
-        assert all([isinstance(el, (str, List)) for el in inputs_dict[key]])
-        #
-        assert all([k in ref_dict[key] for k in inputs_dict[key] if isinstance(k, str)])
-        #
-
-        key = "n_variables"
-        if key not in inputs_dict:
-            inputs_dict[key] = [1]
-        if isinstance(inputs_dict[key], int):
-            inputs_dict[key] = [inputs_dict[key]]
-        assert isinstance(inputs_dict[key], List)
-        assert all([isinstance(el, int) for el in inputs_dict[key]])
-
-        key = "ranges"
-        if key not in inputs_dict:
-            inputs_dict[key] = None
-        assert isinstance(inputs_dict[key], List)
-        assert all([isinstance(el, Dict) for el in inputs_dict[key]])
-        #
-        # TODO
-        #
-
-        key = "min_samples"
-        if key not in inputs_dict:
-            inputs_dict[key] = 0
-        assert isinstance(inputs_dict[key], int)
-
-        key = "statistics"
-        if isinstance(inputs_dict[key], str):
-            inputs_dict[key] = [inputs_dict[key]]
-        assert isinstance(inputs_dict[key], List)
-        assert all([isinstance(el, str) for el in inputs_dict[key]])
-
-        key = "uncertainty"
-        if key not in inputs_dict:
-            inputs_dict[key] = {}
-        assert isinstance(inputs_dict[key], Dict)
-        assert all([isinstance(k, str) and isinstance(d, Dict)\
-                    for k, d in inputs_dict[key].items()])
-        assert all(["name" in d for d in inputs_dict[key].values()])
-        
-
-        return inputs_dict
-
+        pass
+                
 
     # Display
 

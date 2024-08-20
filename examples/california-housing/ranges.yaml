@@ -1,0 +1,11 @@
+all:
+  MedHouseVal: [null, null]
+
+low:
+  MedHouseVal: [0, 150]
+
+mid:
+  MedHouseVal: [150, 350]
+
+high:
+  MedHouseVal: [350, 500]

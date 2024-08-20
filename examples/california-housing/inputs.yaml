@@ -1,0 +1,21 @@
+restrictions:
+  - all
+  - low
+  - mid
+  - high
+
+min_samples: 200
+
+statistics:
+  - mi
+  - corr
+
+uncertainty:
+  mi:
+    name: subsampling
+    args:
+      n: 5
+  corr:
+    name: bootstrapping
+    args:
+      n: 20

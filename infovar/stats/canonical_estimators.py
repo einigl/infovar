@@ -21,10 +21,10 @@ def contraction_matrix(X: np.ndarray, Y: np.ndarray) -> Tuple[np.ndarray, np.nda
     Xc = X - np.mean(X, 0)
     Yc = Y - np.mean(Y, 0)
 
-    # Covariance and crosses covariance matrices of X and Y
-    R_XX = Xc.T @ Xc / L
-    R_YY = Yc.T @ Yc / L
-    R_XY = Xc.T @ Yc / L
+    # Unbiased covariance and crosses covariance matrices of X and Y
+    R_XX = Xc.T @ Xc / (L-1)
+    R_YY = Yc.T @ Yc / (L-1)
+    R_XY = Xc.T @ Yc / (L-1)
 
     # Matricial square-root of covariance matrices
     R_XX_Pud = sqrtm(R_XX)
