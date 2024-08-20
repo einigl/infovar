@@ -1,6 +1,9 @@
 # InfoVar
 
-This Python package provides tools to efficiently study of variables informativity on data of interest.
+[![PyPI version](https://badge.fury.io/py/infovar.svg)](https://badge.fury.io/py/infovar)
+![test coverage](./coverage.svg)
+
+This Python package provides tools to efficiently study variables informativity on data of interest.
 
 
 ## Context
@@ -65,7 +68,7 @@ To get started, check out the Jupyter notebooks provided in the `examples` folde
 To test, run:
 
 ```shell
-pytest && coverage-badge -o coverage.svg
+pytest --cov && coverage-badge -o coverage.svg -f
 ```
 
 

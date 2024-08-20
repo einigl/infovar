@@ -124,30 +124,42 @@ class Handler(ABC):
 
     def update(
         self,
+        x_names: Union[str, List[str]],
+        y_names: Union[str, List[str]],
         inputs_dict: Dict[str, Any],
+        **kwargs
     ) -> None:
         """
-        We keep the previous results and only recompute the stats that has never been computed before.
+        Keeps the previous results and only recompute the stats that has never been computed before.
         Note that there is no guarantee that the data used.
         An error is raised if the number of samples is different from that already stored, if any.
         """
         self.store(
+            x_names,
+            y_names,
             inputs_dict,
-            overwrite=False
+            overwrite=True,
+            **kwargs
         )
 
     def overwrite(
         self,
+        x_names: Union[str, List[str]],
+        y_names: Union[str, List[str]],
         inputs_dict: Dict[str, Any],
+        **kwargs
     ) -> None:
         """
-        We recompute the stats that has already been calculated.
+        Recomputes the statistics that has already been calculated.
         Stats already calculated but not included in the inputs_dict are kept.
         An error is raised if the number of samples is different from that already stored, if any.
         """
         self.store(
+            x_names,
+            y_names,
             inputs_dict,
-            overwrite=True
+            overwrite=True,
+            **kwargs
         )
 
     @abstractmethod
@@ -176,7 +188,7 @@ class Handler(ABC):
         self,
         inputs_dict: Dict[str, Any],
         ref_dict: Dict[str, Any]
-    ) -> None:
+    ) -> Dict[str, Any]:
         # TODO
         # raise ValueError("Inputs must match the reference file")
         pass

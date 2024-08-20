@@ -5,6 +5,10 @@ from tqdm import tqdm
 
 from scipy import stats, integrate
 
+__all__ = [
+    "prob_higher"
+]
+
 def prob_higher(
     mus: np.ndarray,
     sigmas: np.ndarray,
@@ -51,7 +55,7 @@ def prob_higher(
                 fun = lambda t: integrand(t, i)
                 p = integrate.quad(fun, *bounds)[0]
                 probs[i] = p
-        return probs
+        return probs / np.sum(probs)
     
     # If the user has asked for a particular probability
     bounds = (mus[idx]-n_sigma*sigmas[idx], mus[idx]+n_sigma*sigmas[idx])

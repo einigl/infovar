@@ -1,9 +1,9 @@
 import os
 import shutil
 import pickle
-import yaml
 import itertools as itt
 from typing import List, Dict, Any, Tuple, Union, Optional, Sequence, Callable
+from copy import deepcopy
 
 import numpy as np
 from tqdm import tqdm
@@ -50,7 +50,7 @@ class ContinuousHandler(Handler):
         self,
         targets: Optional[Sequence[Union[str, Sequence[str]]]],
         variables: Optional[Sequence[Union[str, Sequence[str]]]]
-    ) -> None: # TODO
+    ) -> None:
         """
         If `targets` and `variables` are both None, remove the whole directory if exists.
         If `targets` and `variables` are both not None, only remove the corresponding pickle file.
@@ -59,6 +59,7 @@ class ContinuousHandler(Handler):
         if targets is None and variables is None:
             if os.path.exists(self.save_path):
                 shutil.rmtree(self.save_path)
+            return
 
         if (targets is None) ^ (variables is None):
             raise ValueError("targets and variables must be simultaneously None or not None")
@@ -69,18 +70,19 @@ class ContinuousHandler(Handler):
 
     def delete_stats(
         self,
-        stats: Union[str, List[str]],
         targs: Union[str, List[str]],
-        vars: Optional[Union[str, List[str]]]=None
+        stats: Union[str, List[str]],
+        vars: Optional[Union[str, List[str]]]=None,
     ) -> None:
         if vars is None:
             vars = self.get_available_variables(targs)
         elif isinstance(vars, str):
-            vars = [vars]        
+            vars = [vars]
 
         for v in vars:
-            path = self.get_filename(targs, v)
+            path = self.get_filename(v, targs)
 
+            print(path)
             with open(path, 'rb') as f:
                 d = pickle.load(f)
 
@@ -97,33 +99,6 @@ class ContinuousHandler(Handler):
 
             with open(path, 'wb') as f:
                 pickle.dump(d, f)
-            os.rename(path, path)
-
-    def update(
-        self,
-        x_names: Union[str, List[str]],
-        y_names: Union[str, List[str]],
-        inputs_dict: Dict[str, Any],
-    ) -> None:
-        self.store(
-            x_names,
-            y_names,
-            inputs_dict,
-            overwrite=False
-        )
-
-    def overwrite(
-        self,
-        x_names: Union[str, List[str]],
-        y_names: Union[str, List[str]],
-        inputs_dict: Dict[str, Any],
-    ) -> None:
-        self.store(
-            x_names,
-            y_names,
-            inputs_dict,
-            overwrite=True
-        )
 
     def store(
         self,
@@ -132,7 +107,7 @@ class ContinuousHandler(Handler):
         inputs_dict: Dict[str, Any],
         overwrite: bool=False,
         raise_error: bool=True
-    ):
+    ) -> None:
         """
         Inputs_dict:
         - TODO
@@ -272,9 +247,11 @@ class ContinuousHandler(Handler):
                 )
                 bounds.append((xticks-padd, xticks+padd))
                 coords.append(xticks)
+            
+            wins["points"] = [ticks.size for ticks in coords]
 
-        data = np.zeros(wins['points'])
-        samples = np.zeros(wins['points'])
+        data = np.zeros(wins["points"])
+        samples = np.zeros(wins["points"])
         
         if stat in inputs_dict["uncertainty"] and "name" in inputs_dict["uncertainty"][stat]: 
             std = np.zeros(wins['points'])
@@ -365,9 +342,13 @@ class ContinuousHandler(Handler):
 
         return data
 
+    def get_available_targets(
+        self
+    ) -> List[List[str]]:
+        raise NotImplementedError("TODO")
+
     def get_available_variables(
         self,
-        x_names: Union[None, str, List[str]],
         y_names: Union[None, str, List[str]]
     ):
         raise NotImplementedError("TODO")
@@ -426,8 +407,7 @@ class ContinuousHandler(Handler):
     ) -> Dict[str, Any]:
         """
         windows:
-        - targets: str or List[str]
-          features: str or List[str]
+        - features: str or List[str]
           bounds: List[int, int] or List[List[int, int]]
           bounds_include_windows: bool or List[bool] (optional)
           scale: Literal[linear, log] or List[Literal[linear, log]] (optional)
@@ -449,8 +429,8 @@ class ContinuousHandler(Handler):
                     ...
             ...
         """
-        inputs_dict = inputs_dict.copy()
-        
+        inputs_dict = deepcopy(inputs_dict)
+
         mandatory_keys = [
             "windows",
             "statistics",
@@ -473,7 +453,7 @@ class ContinuousHandler(Handler):
             inputs_dict[key] = [inputs_dict[key]]
         assert isinstance(inputs_dict[key], List)
         assert all([isinstance(el, Dict) for el in inputs_dict[key]])
-        mandatory_window_keys = ["targets", "features", "bounds"]
+        mandatory_window_keys = ["features", "bounds"]
         optional_window_keys = ["bounds_include_windows", "scale"]
         special_window_keys_1 = ["length", "num_windows"]
         special_window_keys_2 = ["points", "overlap"]
@@ -487,9 +467,11 @@ class ContinuousHandler(Handler):
 
             if isinstance(d["features"], str):
                 d["features"] = [d["features"]]
+            n_features = len(d["features"])
+
             assert isinstance(d["features"], List)
             if isinstance(d["bounds"], List) and not isinstance(d["bounds"][0], List):
-                d["bounds"] = [d["bounds"]]
+                d["bounds"] = [d["bounds"]] * n_features
             assert isinstance(d["bounds"], List)
             if "bounds_include_windows" in d:
                 if isinstance(d["bounds_include_windows"], bool):
@@ -497,23 +479,24 @@ class ContinuousHandler(Handler):
                 assert isinstance(d["bounds_include_windows"], List)
             if "scale" in d:
                 if isinstance(d["scale"], str):
-                    d["scale"] = [d["scale"]]
+                    d["scale"] = [d["scale"]] * n_features
                 assert isinstance(d["scale"], List)
             if "length" in d:
                 if isinstance(d["length"], (float, int)):
                     d["length"] = [d["length"]]
                 assert isinstance(d["length"], List)
+                assert len(d["length"]) ==  n_features
             if "num_windows" in d:
                 if isinstance(d["num_windows"], (float, int)):
-                    d["num_windows"] = [d["num_windows"]]
+                    d["num_windows"] = [d["num_windows"]] * n_features
                 assert isinstance(d["num_windows"], List)
             if "points" in d:
                 if isinstance(d["points"], int):
-                    d["points"] = [d["points"]]
+                    d["points"] = [d["points"]] * n_features
                 assert isinstance(d["points"], List)
             if "overlap" in d:
                 if isinstance(d["overlap"], (str, float, int)):
-                    d["overlap"] = [d["overlap"]]
+                    d["overlap"] = [d["overlap"]] * n_features
                 assert isinstance(d["overlap"], List)
 
             # Percents
@@ -522,9 +505,9 @@ class ContinuousHandler(Handler):
                     continue
                 for i, el in enumerate(d[name]):
                     if isinstance(el, str):
-                        el = el.trim()
+                        el = el.strip()
                         assert el[-1] == "%"
-                        d[i] = el.trim()
+                        d[i] = el.strip()
                     assert isinstance(el, (float, int, str))
 
         key = "min_samples"

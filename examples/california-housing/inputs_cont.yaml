@@ -1,6 +1,5 @@
 windows:
-  - targets: MedHouseVal          # Target feature
-    features: MedHouseVal         # Sliding window feature
+  - features: MedHouseVal         # Sliding window feature
     bounds: [50, 500]             # Sliding window bounds
     bounds_include_windows: True  # The bounds does not correspond to the center of the extreme windows
     scale: linear                 # No logarithmic scale

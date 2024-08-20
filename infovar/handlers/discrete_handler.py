@@ -1,7 +1,6 @@
 import os
 import shutil
 import json
-import warnings
 import itertools as itt
 from typing import List, Dict, Any, Tuple, Union, Optional, Sequence, Callable, Iterable
 from time import time
@@ -74,9 +73,15 @@ class DiscreteHandler(Handler):
         If `y_names` is None, remove the whole directory if exists.
         If `y_names` is not None, only remove the corresponding JSON files.
         """
+        if not os.path.isdir(self.save_path):
+            raise FileNotFoundError(f"Save directory {self.save_path} does not exist.")
+
+
         if y_names is None:
-            if os.path.exists(self.save_path):
-                shutil.rmtree(self.save_path)
+            if any([not file.endswith((".json", ".pickle", ".pkl")) for file in os.listdir(self.save_path)]):
+                raise PermissionError(f"Save directory {self.save_path} contains files or directories that are not generated with handlers. You should remove it by hand.")
+            shutil.rmtree(self.save_path)
+            return
 
         for tar in y_names:
             path = self.get_filename(tar)
@@ -106,36 +111,6 @@ class DiscreteHandler(Handler):
             json.dump(d, f, ensure_ascii=False, indent=4)
         os.rename(path + ".tmp", path)
 
-    def update(
-        self,
-        x_names: Union[str, List[str]],
-        y_names: Union[str, List[str]],
-        inputs_dict: Dict[str, Any],
-        **kwargs
-    ) -> None:
-        self.store(
-            x_names,
-            y_names,
-            inputs_dict,
-            overwrite=False,
-            **kwargs
-        )
-
-    def overwrite(
-        self,
-        x_names: Union[str, List[str]],
-        y_names: Union[str, List[str]],
-        inputs_dict: Dict[str, Any],
-        **kwargs
-    ) -> None:
-        self.store(
-            x_names,
-            y_names,
-            inputs_dict,
-            overwrite=True,
-            **kwargs
-        )
-
     def store(
         self,
         x_names: Union[str, List[str], Iterable[List[str]]],
@@ -147,7 +122,7 @@ class DiscreteHandler(Handler):
         progress_bar: bool=True,
         total_iter: int=None,
         raise_error: bool=True
-    ):
+    ) -> None:
         """
         Inputs_dict:
         - TODO
@@ -174,7 +149,7 @@ class DiscreteHandler(Handler):
         # Variables loop
         if iterable_x:
             assert isinstance(x_names, Iterable) and not isinstance(x_names, str)
-        if isinstance(x_names, str):
+        else:
             x_names = [x_names]
 
         pbar = tqdm(
@@ -469,6 +444,11 @@ class DiscreteHandler(Handler):
         """
         TODO
         """
+        if isinstance(targets, str):
+            targets = [targets]
+        if isinstance(variables, str):
+            variables = [variables]
+
         # Load data
         path = self.get_filename(targets)
         if not os.path.exists(path):
@@ -477,17 +457,38 @@ class DiscreteHandler(Handler):
             data = json.load(f)  # results is a list of dicts
 
         # Get variables content
-        data = self._get_variables_content(variables, data)
+        content = self._get_variables_content(variables, data)
 
-        return [item["restriction"] for item in data]
+        return [item["restriction"] for item in content]
 
     def get_available_stats(
         self,
         targets: Union[str, List[str]],
         variables: Union[str, List[str]],
-        restriction: Union[str, List[str]]
+        restriction: str
     ) -> List[str]:
-        raise NotImplementedError("")
+        if isinstance(targets, str):
+            targets = [targets]
+        if isinstance(variables, str):
+            variables = [variables]
+
+        # Load data
+        path = self.get_filename(targets)
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"File {path} not exists yet.")
+        with open(path, 'r') as f:
+            data = json.load(f)  # results is a list of dicts
+
+        # Get variables content
+        content = self._get_variables_content(variables, data)
+        if content is None:
+            raise ValueError(f"Invalid variables {variables} for targets {targets}")
+
+        for entry in content:
+            if entry["restriction"] == restriction:
+                return list(entry["stats"].keys())
+        
+        raise ValueError(f"Invalid restriction {restriction} for targets {targets} and variables {variables}")
 
     @staticmethod
     def _index_of(
@@ -518,21 +519,6 @@ class DiscreteHandler(Handler):
         except ValueError:
             index = None
         return index
-
-    @staticmethod
-    def _list_ranges(
-        ls: List[Dict[str, Union[str, List[str]]]]
-    ) -> List[Dict[str, str]]:
-        full = []
-        for el in ls:
-            _el = el.copy()
-            for key in _el:
-                if not isinstance(_el[key], List):
-                    _el[key] = [_el[key]]
-            keys = list(_el.keys())
-            for vals in itt.product(*list(_el.values())):
-                full.append({k: v for k, v in zip(keys, vals)})
-        return full
 
     def _check_inputs(
         self,
