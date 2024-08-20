@@ -91,7 +91,7 @@ To account for these uncertainties and to be able to compare different values pr
 
 The heart of `InfoVar` lies in the fact that the informativity of a variable on a quantity of interest can vary according to the selected range of value of this quantity.
 
-For example, if we're interested in house prices in California (see `examples/californian-housing`), among a set of variables, geographical location (latitude, longitude) appears to be the most important pair of variables. However, if we restrict ourselves to the 10% most expensive homes, it appears that the number of rooms in the house becomes most useful. This type of observation is important, for example, from a data analysis point of view, but also in a variable selection context.
+For example, if we're interested in house prices in California (see `examples/california-housing`), among a set of variables, geographical location (latitude, longitude) appears to be the most important pair of variables. However, if we restrict ourselves to the 10% most expensive homes, it appears that the number of rooms in the house becomes most useful. This type of observation is important, for example, from a data analysis point of view, but also in a variable selection context.
 
 More generally, taking into account these variations as a function of ranges of values of the variable of interest enables more refined analysis of phenomena. To help you understand, here are a few examples of possible applications.
 
