@@ -1,7 +1,0 @@
-numpy >= 1.22
-matplotlib >= 3.5
-scipy >= 1.10
-scikit-learn >= 1.1
-pandas >= 1.5
-notebook >= 6.4
-tqdm >= 4.64
