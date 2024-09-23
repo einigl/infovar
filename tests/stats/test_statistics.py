@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from infovar.stats import MI, Condh, Corr, LinearInfo, LinearInfoReparam
+from infovar.stats import MI, Condh, Corr, GaussInfo, GaussInfoReparam
 
 @pytest.fixture(scope="module")
 def x() -> np.ndarray:
@@ -23,10 +23,10 @@ def test_corr(x: np.ndarray, y: np.ndarray):
     corr = Corr()
     corr(x, y)
 
-def test_linearinfo(x: np.ndarray, y: np.ndarray):
-    lininfo = LinearInfo()
-    lininfo(x, y)
+def test_gaussinfo(x: np.ndarray, y: np.ndarray):
+    gaussinfo = GaussInfo()
+    gaussinfo(x, y)
 
-def test_linearinfo_reparam(x: np.ndarray, y: np.ndarray):
-    lininfo = LinearInfoReparam()
-    lininfo(x, y)
+def test_gaussinfo_reparam(x: np.ndarray, y: np.ndarray):
+    gaussinfo = GaussInfoReparam()
+    gaussinfo(x, y)

@@ -1,13 +1,13 @@
 import os
-from typing import Dict, List, Any
+from typing import Dict, Any
 
 import numpy as np
 import pytest
 
 from infovar import ContinuousHandler, StandardGetter
 
-@pytest.fixture
-def handler() -> ContinuousHandler:
+@pytest.fixture(scope="module")
+def chandler() -> ContinuousHandler:
     x1 = np.random.normal(0, 1, size=(2000, 1))
     x2 = np.random.normal(0, 1, size=(2000, 1))
     n = np.random.normal(0, 1, size=(2000, 1))
@@ -18,18 +18,20 @@ def handler() -> ContinuousHandler:
         np.column_stack([x1, x2]), np.column_stack([y1, y2])
     )
 
-    handler = ContinuousHandler()
-    handler.set_getter(getter.get)
-    handler.set_path(
+    chandler = ContinuousHandler()
+    chandler.set_getter(getter.get)
+    chandler.set_path(
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "data-continuous")
     )
+    if os.path.isdir(chandler.save_path):
+        chandler.remove(None, None) # Just in case cleanup failed during last pytest run
 
-    print(str(handler))
-    print(handler.overview())
+    assert isinstance(str(chandler), str)
+    assert chandler.overview() is None
 
-    return handler
+    return chandler
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def settings_profile() -> Dict[str, Any]:
     return {
         "windows": {
@@ -49,7 +51,7 @@ def settings_profile() -> Dict[str, Any]:
         }
     }
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def settings_map() -> Dict[str, Any]:
     return {
         "windows": {
@@ -65,86 +67,147 @@ def settings_map() -> Dict[str, Any]:
         "statistics": ["mi"]
     }
 
-@pytest.mark.order(1)
-def test_update_profile(handler: ContinuousHandler, settings_profile: Dict[str, Any]):
-    handler.update(
+def test_update_profile(chandler: ContinuousHandler, settings_profile: Dict[str, Any]):
+    filename = chandler.get_filename("x1", "y1")
+    assert not os.path.isfile(filename)
+
+    chandler.update(
         "x1",
         "y1",
         settings_profile
     )
 
-    handler.update(
+    assert os.path.isfile(filename)
+
+    filename = chandler.get_filename(["x1", "x2"], "y1")
+    assert not os.path.isfile(filename)
+
+    chandler.update(
         ["x1", "x2"],
         "y1",
         settings_profile
     )
 
-@pytest.mark.order(2)
-def test_update_map(handler: ContinuousHandler, settings_map: Dict[str, Any]):
-    handler.update(
-        "x1",
-        "y1",
-        settings_map
-    )
+    assert os.path.isfile(filename)
 
-    handler.update(
-        ["x1", "x2"],
-        "y1",
-        settings_map
-    )
+    # The following should have no effect
+    filename = chandler.get_filename("x1", "y1")
+    time1 = os.path.getmtime(filename)
 
-@pytest.mark.order(3)
-def test_overwrite_profile(handler: ContinuousHandler, settings_profile: Dict[str, Any]):
-    handler.overwrite(
+    chandler.update(
         "x1",
         "y1",
         settings_profile
     )
 
-    handler.overwrite(
+    time2 = os.path.getmtime(filename)
+    assert time2 == time1
+
+@pytest.mark.run(after='test_update_profile')
+def test_update_map(chandler: ContinuousHandler, settings_map: Dict[str, Any]):
+    filename = chandler.get_filename("x1", "y2")
+    assert not os.path.isfile(filename)
+    print(settings_map)
+    print()
+
+    chandler.update(
+        "x1",
+        "y2",
+        settings_map
+    )
+
+    assert os.path.isfile(filename)
+
+    filename = chandler.get_filename(["x1", "x2"], "y2")
+    assert not os.path.isfile(filename)
+
+    chandler.update(
         ["x1", "x2"],
+        "y2",
+        settings_map
+    )
+
+    assert os.path.isfile(filename)
+
+    # The following should have no effect
+    filename = chandler.get_filename("x1", "y2")
+    time1 = os.path.getmtime(filename)
+
+    chandler.update(
+        "x1",
+        "y2",
+        settings_map
+    )
+
+    time2 = os.path.getmtime(filename)
+    assert time2 == time1
+
+@pytest.mark.run(after='test_update_map')
+def test_overwrite_profile(chandler: ContinuousHandler, settings_profile: Dict[str, Any]):
+    filename = chandler.get_filename("x1", "y1")
+    time1 = os.path.getmtime(filename)
+
+    chandler.overwrite(
+        "x1",
         "y1",
         settings_profile
     )
 
-@pytest.mark.order(4)
-def test_overwrite_map(handler: ContinuousHandler, settings_map: Dict[str, Any]):
-    handler.overwrite(
+    time2 = os.path.getmtime(filename)
+    assert time2 != time1
+
+@pytest.mark.run(after='test_overwrite_profile')
+def test_overwrite_map(chandler: ContinuousHandler, settings_map: Dict[str, Any]):
+    filename = chandler.get_filename("x1", "y2")
+    time1 = os.path.getmtime(filename)
+    
+    chandler.overwrite(
         "x1",
-        "y1",
+        "y2",
         settings_map
     )
 
-    handler.overwrite(
-        ["x1", "x2"],
-        "y1",
-        settings_map
-    )
+    time2 = os.path.getmtime(filename)
+    assert time2 != time1
 
-@pytest.mark.order(5)
-def test_read(handler: ContinuousHandler):
-    entry = handler.read(
+@pytest.mark.run(after='test_overwrite_map')
+def test_read(chandler: ContinuousHandler):
+    entry = chandler.read(
         "x1",
         "y1",
         "y1"
     )
     assert isinstance(entry, Dict)
-    entry = handler.read(
+    entry = chandler.read(
         "x1",
-        "y1",
+        "y2",
         ["y1", "y2"],
     )
     assert isinstance(entry, Dict)
 
-@pytest.mark.order(6)
-def test_get_available(handler: ContinuousHandler):
-    # handler.get_available_targets
-    # handler.get_available_variables
-    # handler.get_available_window_features
-    # handler.get_available_stats
-    pass
+@pytest.mark.run(after='test_read')
+def test_get_available(chandler: ContinuousHandler):
+    res = chandler.get_available_targets()
+    assert len(res) == 2
+    res = chandler.get_available_variables("y1")
+    assert len(res) == 2
+    res = chandler.get_available_window_features("x1", "y2")
+    assert len(res) == 1
+    res = chandler.get_available_stats("x1", "y2", ["y1", "y2"])
+    assert len(res) == 1
 
-@pytest.mark.order(7)
-def test_cleanup(handler: ContinuousHandler):
-    handler.delete_stats("y1", "mi", "x1")
-    handler.remove(None, None)
+@pytest.mark.run(after='test_get_available')
+def test_cleanup(chandler: ContinuousHandler):
+    chandler.delete_stats("y1", "mi", "x1")
+    stats = chandler.get_available_stats("x1", "y1", ["y1"])
+    assert "mi" not in stats
+
+    assert len(chandler.get_existing_saves()) == 4
+    chandler.remove("x1", "y1")
+    assert len(chandler.get_existing_saves()) == 3
+    chandler.remove("x1", None)
+    assert len(chandler.get_existing_saves()) == 2
+    chandler.remove(None, "y1")
+    assert len(chandler.get_existing_saves()) == 1
+    chandler.remove(None, None)
+    assert len(chandler.get_existing_saves()) == 0

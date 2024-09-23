@@ -1,86 +1,121 @@
+import json
 import os
 import shutil
-import json
-import itertools as itt
-from typing import List, Dict, Any, Tuple, Union, Optional, Sequence, Callable, Iterable
 from time import time
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 from tqdm import tqdm
 
-from ..stats.statistics import Statistic
 from ..stats.resampling import Resampling
-
+from ..stats.statistics import Statistic
 from .handler import Handler
 
-__all__ = [
-    "DiscreteHandler"
-]
+__all__ = ["DiscreteHandler"]
 
 
 class DiscreteHandler(Handler):
+    """
+    Class for easily calculating, manipulating and saving calculations of statistical relationships between variables and targets according to predefined situations (restrictions). The term “discrete” means that the calculation is performed for a finite number of independent restrictions.
+    """
 
-    save_path: str
-
-    getter: Callable[[List[str], List[str], Dict[str, Tuple[float, float]]], Tuple[np.ndarray, np.ndarray]]
-
-    stats: Dict[str, Callable]
-    resamplings: Dict[str, Resampling]={}
-
-    restrictions: Optional[Dict[str, Dict]]=None
-
+    ext = ".json"   #: File extension
+    restrictions: Optional[Dict[str, Dict]] = None  #: Dict of current restrictions
+    filename_sep: str = "_"  #: Separator between targets
 
     # Setter
 
-    def set_restrictions(self, d: Dict[str, Dict]) -> None:
+    def set_restrictions(self, d: Dict[str, Dict[str, Tuple[float, float]]]) -> None:
+        """
+        Set new restrictions, i.e., the constraints on one or more targets that reduce the number of data samples that can be used in the calculation.
+
+        Parameters
+        ----------
+        d : Dict[str, Dict[str, Tuple[float, float]]]
+            New restrictions.
+        """
+        if not isinstance(d, Dict):
+            raise TypeError(f"Restriction dictionnary must be a Dict, not {type(d)}")
+        t = self._check_dict_type(d, str, Dict)
+        if t is not None:
+            raise TypeError(
+                f"{t} is not a valid entry ({type(t[0])}, {type(t[1])} instead of (str, Dict))"
+            )
+
+        for _d in d.values():
+            t = self._check_dict_type(_d, str, List)
+            if t is not None:
+                raise TypeError(
+                    f"{t} is not a valid entry ({type(t[0])}, {type(t[1])} instead of (str, Dict))"
+                )
+
         self.restrictions = d
 
+    # Saves
 
-    # General
+    def get_filename(self, y_names: Union[str, Sequence[str]]) -> str:
+        """
+        Builds a save filename from target names.
 
-    def get_filename(
-        self,
-        y_names: Union[str, Sequence[str]]
-    ) -> str:
+        Parameters
+        ----------
+        y_names : Union[str, Sequence[str]]
+            Target names.
+
+        Returns
+        -------
+        str
+            Filename.
+        """
         if isinstance(y_names, str):
             y_names = [y_names]
-        _y_names = "_".join(sorted(y_names))
-        return os.path.join(self.save_path, _y_names + '.json')
+        _y_names = self.filename_sep.join(sorted(y_names))
+        return os.path.join(self.save_path, _y_names + self.ext)
 
+    def parse_filename(self, filename: str) -> Sequence[str]:
+        """
+        Identifies data names from save filename.
+
+        Parameters
+        ----------
+        filename : str
+            Save filename.
+
+        Returns
+        -------
+        Sequence[str]
+            Target names.
+        """
+        assert filename.endswith(self.ext)
+        return filename.removesuffix(self.ext).split(self.filename_sep)
 
     # Writing access
 
-    def create(
-        self,
-        y_names: Union[str, Sequence[str]]
-    ):
+    def create(self, y_names: Union[str, Sequence[str]]):
         """
         Create the statistics directory if not exists as well as the JSON files for features in `y_names`.
+
+        Parameters
+        ----------
+        y_names : Union[str, Sequence[str]]
+            Target names.
         """
-        if not os.path.exists(self.save_path):
-            os.makedirs(self.save_path)
-        
+        super().create()
         path = self.get_filename(y_names)
         if not os.path.isfile(path):
-            with open(path, 'w', encoding="utf-8") as f:
+            with open(path, "w", encoding="utf-8") as f:
                 json.dump([], f, ensure_ascii=False, indent=4)
 
-    def remove(
-        self,
-        y_names: Optional[Sequence[Union[str, Sequence[str]]]]
-    ) -> None:
+    def remove(self, y_names: Optional[Sequence[Union[str, Sequence[str]]]]) -> None:
         """
-        If `y_names` is None, remove the whole directory if exists.
-        If `y_names` is not None, only remove the corresponding JSON files.
+        If `y_names` is None, remove the entire `self.save_path` directory.
+        If `y_names` is not None, only remove the corresponding JSON file, if exists. If not, raise an error.
         """
         if not os.path.isdir(self.save_path):
             raise FileNotFoundError(f"Save directory {self.save_path} does not exist.")
 
-
         if y_names is None:
-            if any([not file.endswith((".json", ".pickle", ".pkl")) for file in os.listdir(self.save_path)]):
-                raise PermissionError(f"Save directory {self.save_path} contains files or directories that are not generated with handlers. You should remove it by hand.")
-            shutil.rmtree(self.save_path)
+            super().remove()
             return
 
         for tar in y_names:
@@ -91,23 +126,41 @@ class DiscreteHandler(Handler):
     def delete_stats(
         self,
         targs: Union[str, List[str]],
-        stats: Union[str, List[str]]
+        stats: Union[str, List[str]],
+        vars: Optional[Union[str, List[str]]] = None,
     ) -> None:
+        """
+        Removes stats `stats` for targets `targs` and variables `vars`.
+        If `vars` is omitted, the stats are removed for any variable with the specified target.
+
+        Parameters
+        ----------
+        targs : Union[str, List[str]]
+            Targets.
+        stats : Union[str, List[str]]
+            Statistic names.
+        vars : Optional[Union[str, List[str]]], optional
+            Variables. If omitted, the statistics are removed for any variables. Default None.
+        """
         path = self.get_filename(targs)
-        with open(path, 'r') as f:
+        with open(path, "r") as f:
             d = json.load(f)  # results is a list of dicts
 
         if isinstance(stats, str):
             stats = [stats]
 
+        if vars is not None:
+            raise NotImplementedError("TODO")
+
         for stat in stats:
+            print(f"Removing {stat} in {os.path.basename(path)}")
             for item1 in d:
                 for item2 in item1["stats"]:
                     item3 = item2["stats"]
-                    for key in [f'{stat}', f'{stat}-time', f'{stat}-boot']:
+                    for key in [f"{stat}", f"{stat}-time", f"{stat}-boot"]:
                         item3.pop(key, None)
 
-        with open(path + ".tmp", 'w', encoding="utf-8") as f:
+        with open(path + ".tmp", "w", encoding="utf-8") as f:
             json.dump(d, f, ensure_ascii=False, indent=4)
         os.rename(path + ".tmp", path)
 
@@ -116,12 +169,12 @@ class DiscreteHandler(Handler):
         x_names: Union[str, List[str], Iterable[List[str]]],
         y_names: Union[str, List[str]],
         inputs_dict: Dict[str, Any],
-        overwrite: bool=False,
-        iterable_x: bool=False,
-        save_every: int=1,
-        progress_bar: bool=True,
-        total_iter: int=None,
-        raise_error: bool=True
+        overwrite: bool = False,
+        iterable_x: bool = False,
+        save_every: int = 1,
+        progress_bar: bool = True,
+        total_iter: int = None,
+        raise_error: bool = True,
     ) -> None:
         """
         Inputs_dict:
@@ -129,9 +182,7 @@ class DiscreteHandler(Handler):
         """
 
         # Checks that the file is in the expected format.
-        self._check_inputs(
-            inputs_dict,
-        )
+        inputs_dict = self._check_inputs(inputs_dict)
 
         if isinstance(y_names, str):
             y_names = [y_names]
@@ -143,7 +194,7 @@ class DiscreteHandler(Handler):
 
         # Load existing data
         path = self.get_filename(y_names)
-        with open(path, 'r') as f:
+        with open(path, "r") as f:
             results = json.load(f)  # results is a list of dicts
 
         # Variables loop
@@ -156,33 +207,36 @@ class DiscreteHandler(Handler):
             x_names,
             desc=str(y_names).replace("'", ""),
             total=total_iter,
-            disable=not progress_bar
+            disable=not progress_bar,
         )
+        is_changed = False
         for it, _x_names in enumerate(pbar, 1):
             if isinstance(_x_names, str):
-                _x_names = [_x_names]    
+                _x_names = [_x_names]
 
             _lines = list(set(_x_names))
-            pbar.set_postfix({'x': str(_lines).replace("'", "")})
+            pbar.set_postfix({"x": str(_lines).replace("'", "")})
 
-            _x_names = list(set(_x_names))            
+            _x_names = list(set(_x_names))
             _x_names = sorted(_x_names)
 
             # We check if the combination of variables already exists
-            index_x = self._index_of(
-                results, value=_x_names, key="x_names"
-            )
+            index_x = self._index_of(results, value=_x_names, key="x_names")
 
             # We create an entry if it doesn't exists
             if index_x is None:
-                results.append({
-                    "x_names": _x_names,
-                    "stats": [],
-                })
+                results.append(
+                    {
+                        "x_names": _x_names,
+                        "stats": [],
+                    }
+                )
                 index_x = -1
 
             # Ranges loop
-            for restr in inputs_dict["restrictions"]: # TODO: "restrictions" field can be None
+            for restr in inputs_dict[
+                "restrictions"
+            ]:  # TODO: "restrictions" field can be None
 
                 # We check if ranges already exists
                 index_ranges = self._index_of_ranges(
@@ -191,76 +245,88 @@ class DiscreteHandler(Handler):
 
                 # We create an entry if it doesn't exists
                 if index_ranges is None:
-                    results[index_x]["stats"].append({
-                        "restriction": restr,
-                        "stats": {},
-                    })
+                    results[index_x]["stats"].append(
+                        {
+                            "restriction": restr,
+                            "stats": {},
+                        }
+                    )
                     index_ranges = -1
 
                 # Ranges restriction
                 if self.restrictions is not None and restr is not None:
                     restrict_dict = self.restrictions[restr]
-                elif self.restrictions is not None:
-                    raise ValueError(f"self.restriction must not be None when the restriction asked is not None (here {restr}). Consider using set_restrictions to load the dictionnary.")
+                elif restr is not None:
+                    raise ValueError(
+                        f"self.restriction must not be None when the restriction asked is not None (here {restr}). Consider using set_restrictions to load the dictionnary."
+                    )
                 else:
                     restrict_dict = {}
 
                 _X, _Y = self.getter(
-                    _x_names, y_names, restrict_dict, inputs_dict.get('max_samples')
+                    _x_names, y_names, restrict_dict, inputs_dict.get("max_samples")
                 )
 
                 entry = results[index_x]["stats"][index_ranges]["stats"]
                 for stat in inputs_dict["statistics"]:
                     if overwrite and stat in entry:
                         entry.pop(stat, None)
-                if set(entry.keys()) <= {"samples"}: # If no keys or only "samples"
+                if set(entry.keys()) <= {"samples"}:  # If no keys or only "samples"
                     entry.pop("samples", None)
 
                 for stat in inputs_dict["statistics"]:
 
                     if stat in entry:
                         continue
+                    else:
+                        is_changed = True
                     entry.update({stat: {}})
 
                     operator = self.stats[stat]
 
                     self._compute_stat(
-                        _X, _Y,
-                        operator, stat,
-                        inputs_dict, entry[stat],
-                        raise_error=raise_error
-                    ) # Modify `entry` in-place
-                
+                        _X,
+                        _Y,
+                        operator,
+                        stat,
+                        inputs_dict,
+                        entry[stat],
+                        raise_error=raise_error,
+                    )  # Modify `entry` in-place
+
                 samples = _Y.shape[0]
                 prev_samples = entry.get("samples")
                 if prev_samples is not None and samples != samples:
                     raise ValueError("Old and new number of samples are differents.")
 
-                entry.update({
-                    "samples": samples
-                })
+                entry.update({"samples": samples})
 
             # Save results
-            
-            if it % save_every == 0:
+
+            if it % save_every == 0 and is_changed:
                 path = self.get_filename(y_names)
-                with open(path + ".tmp", 'w', encoding="utf-8") as f:
+                with open(path + ".tmp", "w", encoding="utf-8") as f:
                     json.dump(results, f, ensure_ascii=False, indent=4)
                 os.rename(path + ".tmp", path)
+                is_changed = False
 
         # Final save
-        
-        path = self.get_filename(y_names)
-        with open(path + ".tmp", 'w', encoding="utf-8") as f:
-            json.dump(results, f, ensure_ascii=False, indent=4)
-        os.rename(path + ".tmp", path)
+
+        if is_changed:
+            path = self.get_filename(y_names)
+            with open(path + ".tmp", "w", encoding="utf-8") as f:
+                json.dump(results, f, ensure_ascii=False, indent=4)
+            os.rename(path + ".tmp", path)
 
     def _compute_stat(
         self,
-        X: np.ndarray, Y: np.ndarray,
-        operator: Statistic, stat: str,
-        inputs_dict: Dict[str, Any], entry: Dict[str, Any],
-        raise_error: bool=True
+        X: np.ndarray,
+        Y: np.ndarray,
+        operator: Statistic,
+        stat: str,
+        inputs_dict: Dict[str, Any],
+        entry: Dict[str, Any],
+        raise_error: bool = True,
     ) -> Dict[str, Any]:
         """
         Modifies in-place the `entry` dictionnary.
@@ -280,32 +346,29 @@ class DiscreteHandler(Handler):
         # Samples
         samples = Y.shape[0]
         if samples <= inputs_dict["min_samples"]:
-            return {
-                "value": None,
-                "time": None,
-                "std": None
-            }
+            return {"value": None, "time": None, "std": None}
 
         # Simple computation
         try:
             start = time()
             value = operator(X, Y)
             end = time()
-            entry.update({
-                "value": value,
-                "time": end-start,
-            })
+            entry.update(
+                {
+                    "value": value,
+                    "time": end - start,
+                }
+            )
         except Exception as e:
             if raise_error:
                 raise e
-            entry.update({
-                "value": None,
-                "time": None,
-                "std": None
-            })
+            entry.update({"value": None, "time": None, "std": None})
             return entry
 
         # Uncertainty
+        if stat not in inputs_dict["uncertainty"]:
+            return entry
+
         try:
             d = inputs_dict["uncertainty"][stat]
             name, args = d["name"], d["args"]
@@ -321,45 +384,41 @@ class DiscreteHandler(Handler):
             if raise_error:
                 raise e
             std = None
-        entry.update({
-            "std": std
-        })
+        entry.update({"std": std})
 
         return entry
 
     # Reading access
-
-    def _get_variables_content(
-        self,
-        x_names: List[str],
-        data: List[Dict[str, Any]]
-    ) -> Optional[List[Dict]]:
-        _x_names = set(x_names)
-        for _item in data:
-            if set(_item["x_names"]) == _x_names:
-                item = _item["stats"]
-                return item
-        return None
-    
-    def _get_restriction_content(
-        self,
-        restr: str,
-        data: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        for _item in data:
-            if _item["restriction"] == restr:
-                item = _item["stats"]
-                return item
-        return None
 
     def read(
         self,
         x_names: Union[str, List[str], Iterable[List[str]]],
         y_names: Union[str, List[str]],
         restr: str,
-        iterable_x: bool=False,
-        default: Any="raise"
-    ):
+        iterable_x: bool = False,
+        default: str = "raise",
+    ) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
+        """
+        Returns entries for variables `x_names` and targets `y_names`.
+
+        Parameters
+        ----------
+        x_names : Union[str, List[str], Iterable[List[str]]]
+            Variables. If Iterable, you must set the `iterable_x` argument to True.
+        y_names : Union[str, List[str]]
+            Targets.
+        restr : str
+            Restriction.
+        iterable_x : bool, optional
+            If True, the `x_names` argument is considered as a list of different variables. Default False.
+        default : Any, optional
+            Default behavior if entry does not exists. If "raise", an error is raised. Else, `default` is returned instead. By default "raise".
+
+        Returns
+        -------
+        Union[Dict[str, Any], List[Dict[str, Any]]]
+            Dictionnary corresponding to variables, targets and restrictions. If `iterable_x` is True, list of Dictionnary.
+        """
         if isinstance(x_names, str):
             x_names = [x_names]
 
@@ -371,7 +430,7 @@ class DiscreteHandler(Handler):
         path = self.get_filename(y_names)
         if not os.path.exists(path):
             raise FileNotFoundError(f"File {path} not exists yet.")
-        with open(path, 'r') as f:
+        with open(path, "r") as f:
             data = json.load(f)  # results is a list of dicts
 
         if not iterable_x:
@@ -397,7 +456,9 @@ class DiscreteHandler(Handler):
             item = self._get_restriction_content(restr, item)
             if item is None:
                 if default == "raise":
-                    raise ValueError(f"Restriction of data {restr} doesn't exist in data")
+                    raise ValueError(
+                        f"Restriction of data {restr} doesn't exist in data"
+                    )
                 item = default
 
             # Store value
@@ -406,43 +467,61 @@ class DiscreteHandler(Handler):
         if iterable_x:
             return item_list
         return item_list[0]
-    
-    def get_available_targets(
-        self
-    ) -> List[List[str]]:
+
+    def get_available_targets(self) -> List[List[str]]:
         """
-        TODO
+        Returns all available targets in saves.
+
+        Returns
+        -------
+        List[List[str]]
+            Available targets in saves.
         """
-        filenames = [
-            f.replace(".json", "") for f in os.listdir(self.save_path) if f.endswith(".json")
-        ]
-        return [
-            f.split("_") for f in filenames
-        ]
+        return [self.parse_filename(f) for f in self.get_existing_saves()]
 
     def get_available_variables(
         self,
         targets: Union[str, List[str]],
     ) -> List[List[str]]:
         """
-        TODO
+        Returns all available variables for targets `y_names` in saves.
+
+        Parameters
+        ----------
+        y_names : Union[None, str, List[str]]
+            Targets.
+
+        Returns
+        -------
+        List[List[str]]
+            Available variables in saves.
         """
         # Load data
         path = self.get_filename(targets)
         if not os.path.exists(path):
             raise FileNotFoundError(f"File {path} not exists yet.")
-        with open(path, 'r') as f:
+        with open(path, "r") as f:
             data = json.load(f)  # results is a list of dicts
 
         return [item["x_names"] for item in data]
-    
+
     def get_available_restrictions(
-        self,
-        targets: Union[str, List[str]],
-        variables: Union[str, List[str]]
+        self, targets: Union[str, List[str]], variables: Union[str, List[str]]
     ) -> List[str]:
         """
-        TODO
+        Returns all available restrictions for targets `y_names` and variables `x_names` in saves.
+
+        Parameters
+        ----------
+        x_names : Union[str, List[str]]
+            Variables.
+        y_names : Union[str, List[str]]
+            Targets.
+
+        Returns
+        -------
+        List[str]
+            Available restrictions.
         """
         if isinstance(targets, str):
             targets = [targets]
@@ -453,7 +532,7 @@ class DiscreteHandler(Handler):
         path = self.get_filename(targets)
         if not os.path.exists(path):
             raise FileNotFoundError(f"File {path} not exists yet.")
-        with open(path, 'r') as f:
+        with open(path, "r") as f:
             data = json.load(f)  # results is a list of dicts
 
         # Get variables content
@@ -465,8 +544,25 @@ class DiscreteHandler(Handler):
         self,
         targets: Union[str, List[str]],
         variables: Union[str, List[str]],
-        restriction: str
+        restriction: str,
     ) -> List[str]:
+        """
+        Returns all available statistics for targets `y_names`, variables `x_names` and restriction `restriction` in saves.
+
+        Parameters
+        ----------
+        x_names : Union[str, List[str]]
+            Variables.
+        y_names : Union[str, List[str]]
+            Targets.
+        restriction : Union[str, List[str]]
+            Restriction.
+
+        Returns
+        -------
+        List[str]
+            Available statistics.
+        """
         if isinstance(targets, str):
             targets = [targets]
         if isinstance(variables, str):
@@ -476,7 +572,7 @@ class DiscreteHandler(Handler):
         path = self.get_filename(targets)
         if not os.path.exists(path):
             raise FileNotFoundError(f"File {path} not exists yet.")
-        with open(path, 'r') as f:
+        with open(path, "r") as f:
             data = json.load(f)  # results is a list of dicts
 
         # Get variables content
@@ -486,15 +582,47 @@ class DiscreteHandler(Handler):
 
         for entry in content:
             if entry["restriction"] == restriction:
-                return list(entry["stats"].keys())
-        
-        raise ValueError(f"Invalid restriction {restriction} for targets {targets} and variables {variables}")
+                return [s for s in entry["stats"].keys() if s != "samples"]
+
+        raise ValueError(
+            f"Invalid restriction {restriction} for targets {targets} and variables {variables}"
+        )
+
+    # Display
+
+    def __str__(self):
+        return "DiscreteHandler"
+
+    # Helpers
+
+    def _get_variables_content(
+        self, x_names: List[str], data: List[Dict[str, Any]]
+    ) -> Optional[List[Dict]]:
+        """
+        TODO
+        """
+        _x_names = set(x_names)
+        for _item in data:
+            if set(_item["x_names"]) == _x_names:
+                item = _item["stats"]
+                return item
+        return None
+
+    def _get_restriction_content(
+        self, restr: str, data: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        TODO
+        """
+        for _item in data:
+            if _item["restriction"] == restr:
+                item = _item["stats"]
+                return item
+        return None
 
     @staticmethod
     def _index_of(
-        ls: Sequence[Dict[str, Sequence]],
-        value: Sequence,
-        key: str
+        ls: Sequence[Dict[str, Sequence]], value: Sequence, key: str
     ) -> Optional[int]:
         """
         Order of element and case are important.
@@ -507,9 +635,7 @@ class DiscreteHandler(Handler):
 
     @staticmethod
     def _index_of_ranges(
-        ls: Sequence[Dict[str, Dict]],
-        value: Sequence,
-        key: str
+        ls: Sequence[Dict[str, Dict]], value: Sequence, key: str
     ) -> Optional[int]:
         """
         Order of element and case are important.
@@ -523,13 +649,11 @@ class DiscreteHandler(Handler):
     def _check_inputs(
         self,
         inputs_dict: Dict[str, Any],
-    ) -> None:
-
-        # TODO
-        pass
-                
-
-    # Display
-
-    def __str__(self):
-        return f"DiscreteHandler"
+    ) -> Dict[str, Any]:
+        """
+        TODO
+        """
+        inputs_dict = inputs_dict.copy()
+        if "uncertainty" not in inputs_dict:
+            inputs_dict.update({"uncertainty": {}})
+        return inputs_dict

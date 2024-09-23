@@ -1,0 +1,53 @@
+[
+    {
+        "x_names": [
+            "c1"
+        ],
+        "stats": [
+            {
+                "restriction": "all",
+                "stats": {
+                    "mi": {
+                        "value": 0.10678895196717038,
+                        "time": 0.20339035987854004
+                    },
+                    "samples": 10000
+                }
+            }
+        ]
+    },
+    {
+        "x_names": [
+            "c2"
+        ],
+        "stats": [
+            {
+                "restriction": "all",
+                "stats": {
+                    "mi": {
+                        "value": 0.12339226340835552,
+                        "time": 0.1636514663696289
+                    },
+                    "samples": 10000
+                }
+            }
+        ]
+    },
+    {
+        "x_names": [
+            "c3"
+        ],
+        "stats": [
+            {
+                "restriction": "all",
+                "stats": {
+                    "mi": {
+                        "value": 0.9460899575792017,
+                        "time": 0.16242456436157227
+                    },
+                    "samples": 10000
+                }
+            }
+        ]
+    }
+]

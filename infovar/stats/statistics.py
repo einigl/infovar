@@ -12,8 +12,8 @@ __all__ = [
     "MI",
     "Condh",
     "Corr",
-    "LinearInfo",
-    "LinearInfoReparam"
+    "GaussInfo",
+    "GaussInfoReparam"
 ]
 
 class Statistic(ABC):
@@ -35,21 +35,50 @@ class Statistic(ABC):
 
 class MI(Statistic):
     """
-    TODO
+    Mutual information estimator.
     """
 
     def __call__(
         self,
         variables: np.ndarray,
         targets: np.ndarray
-    ):
+    ) -> np.ndarray:
+        """
+        Estimate.
+
+        Parameters
+        ----------
+        variables : np.ndarray
+            Variable data.
+        targets : np.ndarray
+            Target data.
+
+        Returns
+        -------
+        np.ndarray
+            Estimated mutual information.
+        """
         _variables = self.marginaly_gaussianize(variables)
         _targets = self.marginaly_gaussianize(targets)
 
         return mi(_variables, _targets)
     
     @staticmethod
-    def gaussianize(x):
+    def gaussianize(x: np.ndarray) -> np.ndarray:
+        """
+        Reparameterization of of univariate distribution into Gaussian.
+        Raise an error if `x` does not have one dimension.
+
+        Parameters
+        ----------
+        x : np.ndarray
+            Univariate data to reparameterize.
+
+        Returns
+        -------
+        np.ndarray
+            Reparameterized data.
+        """
         assert x.ndim == 1
         n = x.size
         order = np.argsort(np.argsort(x))
@@ -57,7 +86,20 @@ class MI(Statistic):
         return np.sqrt(2) * erfinv((2*r[order] - (n+1))/n)
 
     @staticmethod
-    def marginaly_gaussianize(x):
+    def marginaly_gaussianize(x: np.ndarray) -> np.ndarray:
+        """
+        Reparameterization of marginal distributions of multivariate data into Gaussian ones.
+
+        Parameters
+        ----------
+        x : np.ndarray
+            Multidimensional data to reparameterize.
+
+        Returns
+        -------
+        np.ndarray
+            Reparameterized data.
+        """
         if x.ndim == 1:
             return MI.gaussianize(x)
         return np.column_stack([
@@ -66,53 +108,113 @@ class MI(Statistic):
 
 class Condh(Statistic):
     """
-    TODO
+    Conditional differential entropy.
     """
 
     def __call__(
         self,
         variables: np.ndarray,
         targets: np.ndarray
-    ):
+    ) -> np.ndarray:
+        """
+        Estimate.
+
+        Parameters
+        ----------
+        variables : np.ndarray
+            Variable data.
+        targets : np.ndarray
+            Target data.
+
+        Returns
+        -------
+        np.ndarray
+            Estimated conditional differential entropy.
+        """
         _variables = variables + np.random.normal(0, 1e-3, variables.shape)
         _targets = targets + np.random.normal(0, 1e-3, targets.shape)
         return centropy(_targets, _variables)
 
 class Corr(Statistic):
     """
-    TODO
+    Canonical correlation.
     """
 
     def __call__(
         self,
         variables: np.ndarray,
         targets: np.ndarray
-    ):
+    ) -> np.ndarray:
+        """
+        Estimate.
+
+        Parameters
+        ----------
+        variables : np.ndarray
+            Variable data.
+        targets : np.ndarray
+            Target data.
+
+        Returns
+        -------
+        np.ndarray
+            Estimated canonical correlation coefficient.
+        """
         return canonical_corr(variables, targets, max=True).item()
 
-class LinearInfo(Statistic):
+class GaussInfo(Statistic):
     """
-    TODO
+    Mutual information under multivariate Gaussian assumption.
     """
 
     def __call__(
         self,
         variables: np.ndarray,
         targets: np.ndarray
-    ):
+    ) -> np.ndarray:
+        """
+        Estimate.
+
+        Parameters
+        ----------
+        variables : np.ndarray
+            Variable data.
+        targets : np.ndarray
+            Target data.
+
+        Returns
+        -------
+        np.ndarray
+            Estimated mutual information.
+        """
         rhos = canonical_corr(variables, targets, max=False)
         return np.sum(corr_to_info(rhos))
 
-class LinearInfoReparam(Statistic):
+class GaussInfoReparam(Statistic):
     """
-    TODO
+    Mutual information under multivariate Gaussian assumption after Gaussian reparameterization of marginals.
     """
 
     def __call__(
         self,
         variables: np.ndarray,
         targets: np.ndarray
-    ):
+    ) -> np.ndarray:
+        """
+        Estimate.
+
+        Parameters
+        ----------
+        variables : np.ndarray
+            Variable data.
+        targets : np.ndarray
+            Target data.
+
+        Returns
+        -------
+        np.ndarray
+            Estimated mutual information.
+        """
         _variables = MI.marginaly_gaussianize(variables)
         _targets = MI.marginaly_gaussianize(targets)
 

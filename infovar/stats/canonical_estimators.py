@@ -9,9 +9,28 @@ __all__ = [
     "cca"
 ]
 
-def contraction_matrix(X: np.ndarray, Y: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def contraction_matrix(
+    X: np.ndarray,
+    Y: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Returns the contraction matrix as well as the matricial square-root of the covariance matrices.
+    Returns the contraction matrix as well as the matricial square-root of the covariance matrices of data `X` and `Y`.
+
+    Parameters
+    ----------
+    X : np.ndarray
+        Data.
+    Y : np.ndarray
+        Other data.
+
+    Returns
+    -------
+    np.ndarray
+        Contraction matrix.
+    np.ndarray
+        Matricial square-root of `X` covariance matrix.
+    np.ndarray
+        Matricial square-root of `Y` covariance matrix.
     """
     
     # Number of pixels
@@ -38,7 +57,21 @@ def contraction_matrix(X: np.ndarray, Y: np.ndarray) -> Tuple[np.ndarray, np.nda
 def canonical_corr(X: np.ndarray, Y: np.ndarray, max: bool=True) -> Union[float, np.ndarray]:
     """
     Returns the canonical correlation coefficient of data X and Y.
-    If `max` is False, returns all the singular values in decreasing order.
+    If `max` is False, returns all the singular values in decreasing order. These coefficients can be use for example to compute mutual information in the multivariate Gaussian case.
+
+    Parameters
+    ----------
+    X : np.ndarray
+        Data.
+    Y : np.ndarray
+        Other data.
+    max : bool, optional
+        If True, the function returns the main canonical correlation coefficient. Else, it returns all the coefficient in decreasing order. Default True.
+
+    Returns
+    -------
+    Union[float, np.ndarray]
+        Main canonical correlation coefficient or all singular values in decreasing order.
     """
 
     # Contraction matrix (which singular values are the canonical correlations)   
@@ -54,8 +87,29 @@ def canonical_corr(X: np.ndarray, Y: np.ndarray, max: bool=True) -> Union[float,
 
 def cca(X: np.ndarray, Y: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """
-    TODO
+    Canonical correlation analysis.
+
+    Parameters
+    ----------
+    X : np.ndarray
+        Data.
+    Y : np.ndarray
+        Other data.
+
+    Returns
+    -------
+    np.ndarray
+        `X` linear combination coefficients.
+    np.ndarray
+        `Y` linear combination coefficients.
+    np.ndarray
+        Main canonical correlation coefficient.
     """
+
+    if X.ndim == 1:
+        X = X.reshape(-1, 1)
+    if Y.ndim == 1:
+        Y = Y.reshape(-1, 1)
 
     # Contraction matrix (which singular values are the canonical correlations)   
     M, R_XX_Pud, R_YY_Pud = contraction_matrix(X, Y)

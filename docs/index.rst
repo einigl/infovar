@@ -1,13 +1,16 @@
-# InfoVar
+.. InfoVar documentation master file, created by
+   sphinx-quickstart on Thu Sep 19 09:37:55 2024.
+   You can adapt this file completely to your liking, but it should at least
+   contain the root `toctree` directive.
 
-[![PyPI version](https://badge.fury.io/py/infovar.svg)](https://badge.fury.io/py/infovar)
-[![Documentation Status](https://readthedocs.org/projects/infovar/badge/?version=latest)](https://infovar.readthedocs.io/en/latest/?badge=latest)
-![test coverage](./coverage.svg)
+Welcome to InfoVar's documentation
+==================================
 
 The `infovar` Python package provides tools to efficiently study the informativity of variables on data of interest.
 
 
-## Context
+Context
+=======
 
 The informativity of a variable or set of variables is defined here as the ability of these variables, if known, to reduce the uncertainty we have about a quantity of interest. This uncertainty can be defined in several ways, for example in the sense of Shannon's information theory.
 
@@ -15,7 +18,8 @@ This is a ubiquitous problem in science in general, with very concrete applicati
 
 This package provides tools for quantifying the statistical dependence (e.g., mutual information, but other metrics are available) between continuous numerical data and estimating the associated error as well as the influence of the latter on the order of variables in terms of importance.
 
-## Installation
+Installation
+============
 
 *(optional)* Create a virtual environment and activate it:
 
@@ -36,7 +40,8 @@ deactivate
 rm -r .venv
 ```
 
-### From PyPI (recommanded)
+From PyPI (recommanded)
+-----------------------
 
 To install `infovar`:
 
@@ -44,7 +49,8 @@ To install `infovar`:
 pip install infovar
 ```
 
-### From local package
+From local package
+------------------
 
 To get the source code:
 
@@ -58,34 +64,23 @@ To install `infovar`:
 pip install -e .
 ```
 
+.. toctree::
+   :maxdepth: 4
+   :caption: Contents:
 
-## Get started
+   modules
 
-To get started, check out the Jupyter notebooks provided in the `examples` folder.
+.. toctree::
+   :maxdepth: 2
 
-
-## Tests
-
-To test, run:
-
-```shell
-pytest --cov && coverage-badge -o coverage.svg -f
-```
-
-## Documentation
-
-```bash
-cd docs
-sphinx-apidoc -o . ../infovar
-make html
-```
-
-Outputs are in `docs/_build/html`.
+   gallery-examples
 
 
-## Features
+Features
+========
 
-### Statistics
+Statistics
+----------
 
 In this project, we propose to measure the statistical dependence of variables based on the mutual information. Other metrics can also be used, such as the conditional differential entropy, which is closely related to mutual information, or canonical correlation coefficient.
 
@@ -93,7 +88,8 @@ Mutual information and conditional differential entropy are estimated nonparamet
 
 If you're interested in other metrics, it's possible to add and use them.
 
-### Uncertainty on estimations
+Uncertainty on estimations
+--------------------------
 
 Uncertainty in the estimation of the above statistics can arise from various sources:
 - the variance of the estimator,
@@ -101,7 +97,8 @@ Uncertainty in the estimation of the above statistics can arise from various sou
 
 To account for these uncertainties and to be able to compare different values properly, we propose implementations of several approaches, based on bootstrapping or subsampling.
 
-### Estimation for different range of values
+Estimation for different range of values
+----------------------------------------
 
 The heart of `InfoVar` lies in the fact that the informativity of a variable on a quantity of interest can vary according to the selected range of value of this quantity.
 
@@ -140,14 +137,8 @@ The `InfoVar` allows you to perform sensitivity analysis in two ways:
 In case 1 (discrete case), the `DiscreteHandler` class provides all the important functions for calculating, storing and accessing results. In case 2 (continuous case), the `ContinuousHandler` class is used. The notebooks in `examples` give an example of the use of each of these two classes.
 
 
-## Associated packages
-
-[**A&A papers repository**](https://github.com/einigl/informative-obs-paper): Reproduce the results in Einig et al. (2024, 2025)
-
-[**IRAM 30m EMIR informative observables**](https://github.com/einigl/iram-30m-emir-obs-info): Informativity of molecular lines to estimate astrophysical parameters.
-
-
-## References
+References
+==========
 
 [1] Einig, L & Palud, P. & Roueff, A. & Pety, J. & Bron, E. & Le Petit, F. & Gerin, M. & Chanussot, J. & Chainais, P. & Thouvenin, P.-A. & Languignon, D. & Bešlić, I. & Coudé, S. & Mazurek, H. & Orkisz, J. H. & G. Santa-Maria, M. & Ségal, L. & Zakardjian, A. & Bardeau, S. & Demyk, K. & de Souza Magalhẽs, V. & Javier R. Goicoechea & Gratier, P. & V. Guzmán, V. & Hughes, A. & Levrier, F. & Le Bourlot, J. & Darek C. Lis & Liszt, H. S. & Peretto, N. & Roueff, E & Sievers, A. (2024).
 **Quantifying the informativity of emission lines to infer physical conditions in giant molecular clouds. I. Application to model predictions.** *Astronomy & Astrophysics.*
