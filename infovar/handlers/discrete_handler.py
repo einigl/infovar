@@ -329,6 +329,7 @@ class DiscreteHandler(Handler):
         raise_error: bool = True,
     ) -> Dict[str, Any]:
         """
+        TODO
         Modifies in-place the `entry` dictionnary.
         Adds or changes the three following entries of `entry`:
         - {stat}: computed only if current value is None.
@@ -595,11 +596,25 @@ class DiscreteHandler(Handler):
 
     # Helpers
 
+    @staticmethod
     def _get_variables_content(
-        self, x_names: List[str], data: List[Dict[str, Any]]
+        x_names: List[str], data: List[Dict[str, Any]]
     ) -> Optional[List[Dict]]:
         """
-        TODO
+        Returns the entry in `data` that match variable names `x_names`.
+        If no entry matches, returns None.
+        
+        Parameters
+        ----------
+        x_names : List[str]
+            Variable names.
+        data : List[Dict[str, Any]]
+            List of entries.
+
+        Returns
+        -------
+        Optional[List[Dict]]
+            Matching entry, if exists. Else None.
         """
         _x_names = set(x_names)
         for _item in data:
@@ -608,11 +623,25 @@ class DiscreteHandler(Handler):
                 return item
         return None
 
+    @staticmethod
     def _get_restriction_content(
-        self, restr: str, data: List[Dict[str, Any]]
+        restr: str, data: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
         """
-        TODO
+        Returns the entry in `data` that match restriction `restr`.
+        If no entry matches, returns None.
+
+        Parameters
+        ----------
+        restr : str
+            Restriction name.
+        data : List[Dict[str, Any]]
+            List of entries.
+
+        Returns
+        -------
+        Dict[str, Any]
+            Matching entry, if exists. Else None.
         """
         for _item in data:
             if _item["restriction"] == restr:
@@ -625,7 +654,21 @@ class DiscreteHandler(Handler):
         ls: Sequence[Dict[str, Sequence]], value: Sequence, key: str
     ) -> Optional[int]:
         """
-        Order of element and case are important.
+        Returns the index `i` of list `ls` with `ls[i][key] == value` where `value` is a list. Order of elements and case are important.
+
+        Parameters
+        ----------
+        ls : Sequence[Dict[str, Sequence]]
+            List of dictionnaries.
+        value : Sequence
+            Sequence to find.
+        key : str
+            Key of dictionnary to access `value`.
+
+        Returns
+        -------
+        Optional[int]
+            Index, if exists. Else None.
         """
         try:
             index = [tuple(item[key]) for item in ls].index(tuple(value))
@@ -638,7 +681,21 @@ class DiscreteHandler(Handler):
         ls: Sequence[Dict[str, Dict]], value: Sequence, key: str
     ) -> Optional[int]:
         """
-        Order of element and case are important.
+        Returns the index `i` of list `ls` with `ls[i][key] == value` where `value` is a list. Order of elements and case are important.
+
+        Parameters
+        ----------
+        ls : Sequence[Dict[str, Dict]]
+            List of dictionnaries.
+        value : Sequence
+            Sequence to find.
+        key : str
+            Key of dictionnary to access `value`.
+
+        Returns
+        -------
+        Optional[int]
+            _description_
         """
         try:
             index = [item[key] for item in ls].index(value)
@@ -646,12 +703,22 @@ class DiscreteHandler(Handler):
             index = None
         return index
 
+    @staticmethod
     def _check_inputs(
-        self,
         inputs_dict: Dict[str, Any],
     ) -> Dict[str, Any]:
         """
-        TODO
+        Verifies the validity of `inputs_dict`. If necessary, can return a modified version of it. It does not modify the argument in-place.
+
+        Parameters
+        ----------
+        inputs_dict : Dict[str, Any]
+            Settings dictionnary for statistics computation.
+
+        Returns
+        -------
+        Dict[str, Any]
+            Potentially amended settings dictionnary.
         """
         inputs_dict = inputs_dict.copy()
         if "uncertainty" not in inputs_dict:

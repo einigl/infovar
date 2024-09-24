@@ -1,3 +1,6 @@
 # California housing inputs and outputs
 california-housing/data-out
 california-housing/data-out-continuous
+
+# img backups
+img/*.bkp
