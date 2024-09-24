@@ -19,7 +19,7 @@ class DiscreteHandler(Handler):
     Class for easily calculating, manipulating and saving calculations of statistical relationships between variables and targets according to predefined situations (restrictions). The term “discrete” means that the calculation is performed for a finite number of independent restrictions.
     """
 
-    ext = ".json"   #: File extension
+    ext = ".json"  #: File extension
     restrictions: Optional[Dict[str, Dict]] = None  #: Dict of current restrictions
     filename_sep: str = "_"  #: Separator between targets
 
@@ -603,7 +603,7 @@ class DiscreteHandler(Handler):
         """
         Returns the entry in `data` that match variable names `x_names`.
         If no entry matches, returns None.
-        
+
         Parameters
         ----------
         x_names : List[str]
