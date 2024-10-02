@@ -17,7 +17,7 @@ classifiers = [
 	"Operating System :: OS Independent",
 ]
 repository = "https://github.com/einigl/infovar"
-
+packages=[{include="infovar"}]
 
 [tool.poetry.dependencies]
 python = ">=3.9"
@@ -26,7 +26,7 @@ matplotlib = ">= 3.5"
 scipy = ">= 1.10"
 scikit-learn = ">= 1.1"
 notebook = ">= 6.4"
-tqdm = ">= 4.62"
+tqdm = ">= 4.66.3"
 jupyter = "^1.0.0"
 
 [tool.poetry.dev-dependencies]
@@ -70,6 +70,9 @@ requests-mock = "^1.10.0"
 minversion = "6.0"
 addopts = "-ra -q -vv --cov=nnbma --cov-report=term-missing --cov-report=xml"
 testpaths = ["tests"]
+markers = [
+    "run: mark test order"
+]
 
 # For other tools to be black compliant
 # https://black.readthedocs.io/en/stable/guides/using_black_with_other_tools.html

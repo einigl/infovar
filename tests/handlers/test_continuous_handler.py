@@ -198,7 +198,7 @@ def test_get_available(chandler: ContinuousHandler):
 
 @pytest.mark.run(after='test_get_available')
 def test_cleanup(chandler: ContinuousHandler):
-    chandler.delete_stats("y1", "mi", "x1")
+    chandler.delete_stats("x1", "y1", "mi")
     stats = chandler.get_available_stats("x1", "y1", ["y1"])
     assert "mi" not in stats
 

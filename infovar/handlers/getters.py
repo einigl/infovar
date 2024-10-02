@@ -7,13 +7,39 @@ __all__ = ["StandardGetter"]
 
 
 class StandardGetter:
+    """
+    Class implementing a `get` function for handlers.
+    """
+
     def __init__(
-        self, x_names: List[str], y_names: List[str], x: np.ndarray, y: np.ndarray
+        self,
+        x_names: List[str],
+        y_names: List[str],
+        x: np.ndarray,
+        y: np.ndarray
     ):
-        self.x_names = x_names
-        self.y_names = y_names
-        self.x = x
-        self.y = y
+        """
+        Initializer.
+
+        Parameters
+        ----------
+        x_names : List[str]
+            Variable names.
+        y_names : List[str]
+            Target names.
+        x : np.ndarray
+            Variable data. Must have x.shape[0] == len(x_names).
+        y : np.ndarray
+            Target data. Must have y.shape[0] == len(y_names).
+        """
+        assert x.shape[0] == y.shape[0]
+        assert x.shape[1] == len(x_names)
+        assert y.shape[1] == len(y_names)
+
+        self.x_names = x_names #: Variable names.
+        self.y_names = y_names #: Target names.
+        self.x = x #: Variable data
+        self.y = y #: Target data
 
     def get(
         self,
@@ -21,7 +47,28 @@ class StandardGetter:
         y_features: List[str],
         restrictions: Dict[str, Tuple[float]],
         max_samples: Optional[int] = None,
-    ):
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Returns variable and target data that verifies the restrictions provided by `restriction` dictionnary. If `max_samples` is not None, it precises the maximum number of random samples to draw.
+
+        Parameters
+        ----------
+        x_features : List[str]
+            Names of features to return.
+        y_features : List[str]
+            Names of targets to return.
+        restrictions : Dict[str, Tuple[float]]
+            Dictionnary of restrictions on variable or target values.
+        max_samples : Optional[int], optional
+            If not None, maximum number of random samples to draw, by default None.
+
+        Returns
+        -------
+        np.ndarray
+            Selected variable data.
+        np.ndarray
+            Selected target data.
+        """
         assert set(x_features) <= set(self.x_names)
         assert set(y_features) <= set(self.y_names)
 

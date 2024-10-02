@@ -3,11 +3,10 @@ Gallery of examples
 
 This gallery contains several application examples for the ``infovar`` package to illustrate diverse features.
 
-
 **Discrete and continuous handler basic use:**
 
-- ``discrete-handler.ipynb``: illustrate the basic features of `DiscreteHandler` on synthetic data
-- ``continuous-handler.ipynb``: illustrate the basic features of `ContinuousHandler` on synthetic data
+- ``discrete-handler.ipynb``: illustrates the basic features of ``DiscreteHandler`` on synthetic data
+- ``continuous-handler.ipynb``: illustrates the basic features of ``ContinuousHandler`` on synthetic data
 
 **California Housing real-world example:**
 

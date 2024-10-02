@@ -1,13 +1,13 @@
-all:
+all: null
 
 negative_1:
-  s1: [-1, 0]
+  y1: [-1, 0]
 
 positive_1:
-  s1: [0, 1]
+  y1: [0, 1]
 
 negative_2:
-  s2: [-1, 0]
+  y2: [-1, 0]
 
 positive_2:
-  s2: [0, 1]
+  y2: [0, 1]

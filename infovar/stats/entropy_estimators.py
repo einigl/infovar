@@ -1,7 +1,5 @@
-#!/usr/bin/env python
-# Based on the package by Greg Ver Steeg
-# See readme.pdf for documentation
-# Or go to http://www.isi.edu/~gregv/npeet.html
+# Adapted from Greg Ver Steeg's package
+# For details, see http://www.isi.edu/~gregv/npeet.html
 
 import numpy as np
 from scipy.special import digamma

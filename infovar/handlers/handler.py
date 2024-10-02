@@ -246,9 +246,13 @@ class Handler(ABC):
         """
         print(str(self))
         print("Save path:", self.save_path)
-        print("Existing saves:")
-        for filename in self.get_existing_saves():
-            print(filename)
+        files = self.get_existing_saves()
+        if len(files) == 0:
+            print("No existing saves.")
+        else:
+            print("Existing saves:")
+            for filename in files:
+                print(filename)
 
     @abstractmethod
     def __str__(self):

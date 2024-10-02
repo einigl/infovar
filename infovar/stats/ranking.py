@@ -17,8 +17,27 @@ def prob_higher(
     pbar: bool=False,
 ) -> Union[np.ndarray, float]:
     """
-    Returns the probability
-    Ref: https://stats.stackexchange.com/questions/44139/what-is-px-1x-2-x-1x-3-x-1x-n
+    Returns the probability of a given estimation (described by an estimated value and a standard deviation) to be the highest among all provided estimations.
+    The argument `idx` specifies the index of the estimation whose probability to be the highest has to be computed. If None, returns the probability for every provided estimation. 
+    Source: https://stats.stackexchange.com/questions/44139/what-is-px-1x-2-x-1x-3-x-1x-n
+
+    Parameters
+    ----------
+    mus : np.ndarray
+        Estimates.
+    sigmas : np.ndarray
+        Uncertainty of estimates (1 sigma).
+    idx : Optional[int], optional
+        _description_, by default None
+    approx : bool, optional
+        If True, neglects estimates above three sigma. Default: True.
+    pbar : bool, optional
+        If True, displays a progress bar. Default: False
+
+    Returns
+    -------
+    Union[np.ndarray, float]
+        If `idx` is an integer, probability of the i-th estimate to be the highest. If `idx` is None, array of probability for each estimate.
     """
     if not isinstance(mus, np.ndarray):
         mus = np.array(mus)

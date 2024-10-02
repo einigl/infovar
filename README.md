@@ -1,8 +1,8 @@
 # InfoVar
 
 [![PyPI version](https://badge.fury.io/py/infovar.svg)](https://badge.fury.io/py/infovar)
-[![Documentation Status](https://readthedocs.org/projects/infovar/badge/?version=latest)](https://infovar.readthedocs.io/en/latest/?badge=latest)
-![test coverage](./coverage.svg)
+[![Documentation status](https://readthedocs.org/projects/infovar/badge/?version=latest)](https://infovar.readthedocs.io/en/latest/?badge=latest)
+![](./coverage.svg)
 
 The `infovar` Python package provides tools to efficiently study the informativity of variables on data of interest.
 

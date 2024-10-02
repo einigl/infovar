@@ -8,6 +8,7 @@ Subpackages
    :maxdepth: 4
 
    infovar.handlers
+   infovar.processing
    infovar.stats
 
 Module contents

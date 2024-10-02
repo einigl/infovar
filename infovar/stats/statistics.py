@@ -5,7 +5,7 @@ from scipy.special import erfinv
 
 from .entropy_estimators import mi, centropy
 from .canonical_estimators import canonical_corr
-from .info_theory import corr_to_info
+from .info_theory import corr_to_info_gaussian_1d
 
 __all__ = [
     "Statistic",
@@ -188,7 +188,7 @@ class GaussInfo(Statistic):
             Estimated mutual information.
         """
         rhos = canonical_corr(variables, targets, max=False)
-        return np.sum(corr_to_info(rhos))
+        return np.sum(corr_to_info_gaussian_1d(rhos))
 
 class GaussInfoReparam(Statistic):
     """
@@ -219,4 +219,4 @@ class GaussInfoReparam(Statistic):
         _targets = MI.marginaly_gaussianize(targets)
 
         rhos = canonical_corr(_variables, _targets, max=False)
-        return np.sum(corr_to_info(rhos))
+        return np.sum(corr_to_info_gaussian_1d(rhos))

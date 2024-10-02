@@ -20,7 +20,7 @@ def dhandler() -> DiscreteHandler:
     dhandler = DiscreteHandler()
     dhandler.set_getter(getter.get)
     dhandler.set_restrictions({
-        "all": {},
+        "all": None,
         "neg": {"y": [None, 0]},
         "pos": {"y": [0, None]}
     })
@@ -168,19 +168,19 @@ def test_get_available(dhandler: DiscreteHandler):
     assert len(res) == 1
     res = dhandler.get_available_variables("y")
     assert len(res) == 3
-    res = dhandler.get_available_restrictions("y", "x1")
+    res = dhandler.get_available_restrictions("x1", "y")
     assert len(res) == 3
-    res = dhandler.get_available_restrictions("y", ["x1", "x2"])
+    res = dhandler.get_available_restrictions(["x1", "x2"], "y")
     assert len(res) == 3
-    res = dhandler.get_available_stats("y", "x1", "all")
+    res = dhandler.get_available_stats("x1", "y", "all")
     assert len(res) == 2
-    res = dhandler.get_available_stats("y", ["x1", "x2"], "neg")
+    res = dhandler.get_available_stats(["x1", "x2"], "y", "neg")
     assert len(res) == 2
 
 @pytest.mark.run(after='test_get_available')
 def test_cleanup(dhandler: DiscreteHandler):
-    dhandler.delete_stats("y", "mi")
-    stats = dhandler.get_available_stats("y", ["x1", "x2"], "all")
+    dhandler.delete_stats(None, "y", "mi")
+    stats = dhandler.get_available_stats(["x1", "x2"], "y", "all")
     assert "mi" not in stats
 
     dhandler.remove("y")

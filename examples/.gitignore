@@ -1,4 +1,7 @@
-# California housing inputs and outputs
+# Handlers introduction outputs
+handlers/data
+
+# California housing outputs
 california-housing/data-out
 california-housing/data-out-continuous
 
